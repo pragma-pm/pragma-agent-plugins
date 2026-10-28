@@ -25,13 +25,13 @@ Run `claude mcp get pragma`.
 
 The hooks attribute time to one actor id, kept in `~/.claude/pragma/identity.json`. Read the file first; if it names an `actorId`, confirm it with the user and go on.
 
-No tool returns the caller's own actor id yet. Find it through an item: ask the user to name a Pragma item they are assigned to (AskUserQuestion with the items `search` finds for their name as a shortcut, plus "none of these"), `get_manageable` it, read `assignees`, and ask the user to pick themselves among the names shown. Write:
+Call `get_me`: it answers the caller's `actorId`, nickname, email and organizations. Confirm the nickname with the user (AskUserQuestion: "You are «nickname»?" with yes / no) and write:
 
 ```json
 { "actorId": "actor__…" }
 ```
 
-If nothing is assigned to the user anywhere, ask them to paste their actor id from the Pragma webapp.
+A server that does not know `get_me` yet answers that the tool does not exist: find the id through an item instead. Ask the user to name a Pragma item they are assigned to (AskUserQuestion with the items `search` finds for their name as a shortcut, plus "none of these"), `get_manageable` it, read `assignees`, and ask the user to pick themselves among the names shown. If nothing is assigned to the user anywhere, ask them to paste their actor id from the Pragma webapp.
 
 ## 3. The repository
 

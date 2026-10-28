@@ -35,4 +35,4 @@ Never ask which item to use: pick the best, say what you picked. Wrong pick → 
 - **Exploration before the work.** One small task (a fix, a change): the exploration is part of it, already counted. Several tasks under a requirement: log the exploration on a task «Exploration: <topic>» under that same requirement, and say one line — "Logging <time> of exploration on «Exploration: <topic>» under «<need>» — say 'fold' to merge it into the first task" — then proceed without waiting.
 - **Interim entries.** The Stop hook nudges after 30 unlogged minutes: log an entry then (`note: "interim"`). Several entries per task per day are normal.
 - **After every `add_time_entry`, exactly one line to the user:** "Logged <Xh YYm> on [<task>](https://app.pragma.pm/items/<taskId>) (<source>)". Always, even when the user did not ask.
-- Correct a wrong entry with `update_time_entry`; never log the same span twice.
+- Correct a wrong entry with `update_time_entry`. An entry the user drops («drop the gap», «don't log that») is **deleted** with `delete_time_entry`, never updated to 0 minutes. Never log the same span twice.

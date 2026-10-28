@@ -370,7 +370,7 @@ def refresh_working(state, now, now_by_person=False):
     moments = session_moments(state)
     seconds, ambiguous = working_seconds(moments, since, now, now_by_person)
     # A time entry settles the spans before it: the protocol asks the user before logging.
-    settled_before = max([entry['at'] for entry in state['timeEntries']] + [0])
+    settled_before = max([entry['at'] for entry in state['timeEntries']] + [state.get('settledAt', 0)])
     ambiguous = [span for span in ambiguous if span[1] > settled_before]
     state['working'] = {
         'minutes': round(seconds / 60),
@@ -392,6 +392,8 @@ def task_working(state, now, now_by_person):
     since, logged = unlogged_since(state, task['id'])
     if since is None:
         return None
+    # A deleted entry settles what came before it: the user decided, nothing re-asks.
+    since = max(since, state.get('settledAt', 0))
     minutes, ambiguous = minutes_since(state, since, now, now_by_person)
     return {'id': task['id'], 'unloggedMinutes': minutes, 'ambiguousMinutes': span_minutes(ambiguous),
             'since': since, 'sinceLastEntry': logged}
@@ -950,6 +952,21 @@ def cmd_track(hook_input, mapping):
             target['note'] = tool_input['note']
         refresh_working(state, now)
         context = (f'Corrected the entry on «{title_of(state, activity_id)}» to {hm(target.get("duration", 0))}. '
+                   f'Tell the user in one line, nothing more.')
+
+    elif name == 'delete_time_entry' and isinstance(data, dict) and data.get('deleted'):
+        # A dropped entry leaves the session's record. The spans it covered stay settled:
+        # the user decided about them, so nothing asks about them again.
+        activity_id = data.get('activityId') or tool_input.get('activityId')
+        entry_id = data.get('id') or tool_input.get('timeEntryId')
+        entries = state['timeEntries']
+        target = next((e for e in reversed(entries) if e.get('id') == entry_id), None)
+        if target is not None:
+            entries.remove(target)
+            state['settledAt'] = max(state.get('settledAt', 0), target.get('at', 0))
+        refresh_working(state, now)
+        dropped = hm(target.get('duration', 0)) if target else 'an entry'
+        context = (f'Deleted {dropped} on «{title_of(state, activity_id)}». '
                    f'Tell the user in one line, nothing more.')
 
     save_state(state)

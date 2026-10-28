@@ -300,7 +300,9 @@ function entryReference(id: string | null): string {
 
 function adjustInstruction(task: PragmaObject, changes: readonly EntryChange[], target: number): string {
   const steps = changes
-    .map(change => `update_time_entry({ activityId: "${task.id}", timeEntryId: "${entryReference(change.id)}", duration: ${change.to} }) (was ${change.from})`)
+    .map(change => change.to === 0
+      ? `delete_time_entry({ activityId: "${task.id}", timeEntryId: "${entryReference(change.id)}" }) (was ${change.from}; a dropped entry is deleted, never set to 0)`
+      : `update_time_entry({ activityId: "${task.id}", timeEntryId: "${entryReference(change.id)}", duration: ${change.to} }) (was ${change.from})`)
     .join('; then ')
   return (
     `Pragma menu action, pressed by the user in the Pragma menu of the pragma plugin: set the time logged this session on ` +
@@ -379,10 +381,13 @@ async function adjustLogged($: EngineInterface, task: PragmaObject, delta: numbe
   await markRunning($, task.id, 'adjust', label)
   const changes = adjustedEntries(task.entries, delta)
   for (const [index, change] of changes.entries()) {
+    // An entry brought to nothing is deleted, never kept at 0 minutes.
     const failure =
       change.id === null
         ? 'the entry has no id in the session state'
-        : await callPragma($, { tool: 'mcp__pragma__update_time_entry', activityId: task.id, timeEntryId: change.id, duration: change.to, consent })
+        : change.to === 0
+          ? await callPragma($, { tool: 'mcp__pragma__delete_time_entry', activityId: task.id, timeEntryId: change.id, consent })
+          : await callPragma($, { tool: 'mcp__pragma__update_time_entry', activityId: task.id, timeEntryId: change.id, duration: change.to, consent })
     if (failure !== null) {
       await fallBack($, task.id, 'adjust', label, failure, adjustInstruction(task, changes.slice(index), target))
       return
@@ -449,7 +454,7 @@ export const register: Register = on => {
       const fields: Record<string, unknown> = e
       const activityId = fields['activityId']
       const id = fields['id']
-      if (e.tool === 'mcp__pragma__update_time_entry' && typeof activityId === 'string') {
+      if ((e.tool === 'mcp__pragma__update_time_entry' || e.tool === 'mcp__pragma__delete_time_entry') && typeof activityId === 'string') {
         void result.then(() => update($, pending, queued => withoutKey(queued, activityId)), () => undefined)
       }
       if ((e.tool === 'mcp__pragma__delete_manageable' || e.tool === 'mcp__pragma__archive_manageable') && typeof id === 'string') {
