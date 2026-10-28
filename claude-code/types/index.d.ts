@@ -49,8 +49,8 @@ export type TimeEntry = { id: string | null; activityId: string; duration: numbe
 export type TaskRecord = { seenAt?: number; pinnedAt?: number; countedFrom?: number; closedAt?: number; archivedAt?: number }
 
 /**
- * A tracked directory's registration in `~/.claude/pragma/repositories.json` (the file keeps its
- * first name; its keys are directories, a code repository or not): its organization and default projects.
+ * A tracked directory's registration in `~/.claude/pragma/directories.json`: its organization and
+ * default projects.
  */
 export type Mapping = {
   /** The tracked directory, real path: the key of the registration. The hooks cover it and every directory under it. */

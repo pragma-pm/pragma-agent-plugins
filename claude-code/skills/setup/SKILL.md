@@ -31,7 +31,7 @@ A server that does not know `get_me` yet answers that the tool does not exist: f
 
 ## 3. The directory
 
-The registration is per person and per directory, kept in `~/.claude/pragma/repositories.json` (the file keeps its first name; its keys are directories, a code repository or not), never committed: permissions differ from one person to the next. The hooks cover the registered directory and every directory under it, and are inert elsewhere.
+The registration is per person and per directory, kept in `~/.claude/pragma/directories.json`, never committed: permissions differ from one person to the next. The hooks cover the registered directory and every directory under it, and are inert elsewhere.
 
 1. The directory: the one the session runs in, resolved (`realpath`). In a git repository, its root (`git rev-parse --show-toplevel`), so every sub-directory is covered. Someone who keeps one directory per client registers each.
 2. The organization: `list_organizations`. One: take it. Several: AskUserQuestion.

@@ -26,7 +26,7 @@ Every refusal is a warning, not a lock: the same call repeated goes through. The
 
 1. The Pragma MCP server (`https://api.pragma.pm/mcp`), registered under the name `pragma` in your user config, and signed in.
 2. Who you are in Pragma: your actor id, stored in `~/.claude/pragma/identity.json`.
-3. The directory: its organization and the default projects for work that belongs to no initiative — one catch-all project, one per kind of work (problems, improvements, kinds of your own), or none — stored in `~/.claude/pragma/repositories.json`. The hooks cover the directory and everything under it, and are inert elsewhere.
+3. The directory: its organization and the default projects for work that belongs to no initiative — one catch-all project, one per kind of work (problems, improvements, kinds of your own), or none — stored in `~/.claude/pragma/directories.json`. The hooks cover the directory and everything under it, and are inert elsewhere.
 4. Permission rules for the Pragma tools the agent calls on your behalf, so neither you nor the auto-mode classifier is asked for each.
 5. Your preference for work of a few minutes: on the need's previous task, or a task of its own.
 

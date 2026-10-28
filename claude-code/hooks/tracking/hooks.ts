@@ -108,7 +108,7 @@ async function directoryCandidates($: EngineInterface): Promise<string[]> {
 }
 
 /**
- * The registration of the nearest registered directory (a key of repositories.json that is the
+ * The registration of the nearest registered directory (a key of directories.json that is the
  * working directory or one of its parents) and the person; null when none is registered, or
  * when PRAGMA_TIME_GATE is off.
  */
@@ -118,7 +118,7 @@ export async function refreshRegistration($: EngineInterface): Promise<Mapping |
   if (gate?.toLowerCase() === 'off') return null
   const home = (await $.env.get('HOME')) ?? ''
   identity = parseIdentity(await readJson($, `${home}/.claude/pragma/identity.json`))
-  const registrations = await readJson($, `${home}/.claude/pragma/repositories.json`)
+  const registrations = await readJson($, `${home}/.claude/pragma/directories.json`)
   if (!isRecord(registrations)) return null
   for (const candidate of await directoryCandidates($)) {
     const entry = registrations[candidate]

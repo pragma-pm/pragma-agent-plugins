@@ -11,7 +11,7 @@ const TASK = 'manageable_task__t1'
 
 const FILES: Record<string, string> = {
   [`${HOME}/.claude/pragma/identity.json`]: JSON.stringify({ actorId: 'actor__me' }),
-  [`${HOME}/.claude/pragma/repositories.json`]: JSON.stringify({
+  [`${HOME}/.claude/pragma/directories.json`]: JSON.stringify({
     [DIRECTORY]: { organizationId: 'organization__o', organizationName: 'Org', defaultProjects: { improvement: { id: 'project__p', title: 'Improvements' } } },
   }),
 }
