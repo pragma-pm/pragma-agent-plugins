@@ -807,10 +807,40 @@ def track_transition(state, mapping, tool_input, now):
                 f'kept (the footer turns them into badges): '
                 f'"Pinned: {markdown_link(title_of(state, manageable_id), item_url(manageable_id))} — '
                 f'{need_link}{project_part}".')
-    if category in CLOSING_CATEGORIES and (state.get('task') or {}).get('id') == manageable_id:
+    if category in CLOSING_CATEGORIES and manageable_type(manageable_id) in ACTIVITY_TYPES:
         state['tasks'].setdefault(manageable_id, {})['closedAt'] = now
-        state['task'] = None
+        if (state.get('task') or {}).get('id') == manageable_id:
+            state['task'] = None
+        return need_follow_up(state, manageable_id)
+    if category in CLOSING_CATEGORIES and manageable_type(manageable_id) in NEED_TYPES:
+        state['tasks'].setdefault(manageable_id, {})['closedAt'] = now
+        if (state.get('need') or {}).get('id') == manageable_id and not state.get('task'):
+            state['need'] = None
     return None
+
+
+def need_follow_up(state, task_id):
+    """A task closed: the need it answers may be complete. The agent offers, the user decides."""
+    need_id = state['needOf'].get(task_id)
+    if not need_id or state['tasks'].get(need_id, {}).get('closedAt'):
+        return None
+    others = [other for other, need in state['needOf'].items()
+              if need == need_id and other != task_id and not state['tasks'].get(other, {}).get('archivedAt')]
+    still_open = [title_of(state, other) for other in others if not state['tasks'].get(other, {}).get('closedAt')]
+    if still_open:
+        seen = (f'{len(still_open)} other task{"s" if len(still_open) > 1 else ""} of it seen this session still open: '
+                + ', '.join(f'«{title}»' for title in still_open))
+    elif others:
+        seen = 'every other task of it seen this session is closed'
+    else:
+        seen = 'no other task of it seen this session'
+    kind = manageable_type(need_id) or 'need'
+    article = 'an' if kind[0] in 'aeiou' else 'a'
+    return (f'Task «{title_of(state, task_id)}» closed. The {kind} it answers, «{title_of(state, need_id)}», may be '
+            f'complete ({seen}; its tasks outside this session: `graph_get_neighbors` on it). Offer to move it: '
+            f'`available_transitions` on the {kind}, then ask the user with the AskUserQuestion tool, never in plain '
+            f'text: one option per allowed transition (Done, In review, …) plus «Leave it as is». Apply the answer '
+            f'with `transition_manageable`; the user decides, you never close {article} {kind} on your own.')
 
 
 def cmd_track(hook_input, mapping):
