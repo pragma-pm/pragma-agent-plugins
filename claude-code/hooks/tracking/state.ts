@@ -12,7 +12,7 @@ export function initialState(sessionId: string, mapping: Mapping, actorId: strin
   return {
     sessionId,
     startedAt: now,
-    repo: mapping.repo,
+    directory: mapping.directory,
     organizationId: mapping.organizationId,
     actorId,
     need: null,

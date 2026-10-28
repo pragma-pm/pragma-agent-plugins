@@ -1,13 +1,13 @@
 # Pragma agent plugins
 
-Plugins that make coding agents track their work in [Pragma](https://pragma.pm): the task they are on, the time it took, the requirement or issue it answers. One folder per agent harness; Claude Code first.
+Plugins that make agents track their work in [Pragma](https://pragma.pm): the task they are on, the time it took, the requirement or issue it answers. One folder per agent harness; Claude Code first.
 
 ```
 claude plugin marketplace add pragma-pm/pragma-agent-plugins
 claude plugin install pragma@pragma.pm
 ```
 
-Then, in a session opened in the repository to track: `/pragma:setup`.
+Then, in a session opened in the directory to track (a code repository, a client's folder, any folder of work): `/pragma:setup`.
 
 ## Claude Code: the `pragma` plugin
 
@@ -22,17 +22,17 @@ Every refusal is a warning, not a lock: the same call repeated goes through. The
 
 ### Setup
 
-`/pragma:setup` walks through, once per machine and once per repository:
+`/pragma:setup` walks through, once per machine and once per directory:
 
 1. The Pragma MCP server (`https://api.pragma.pm/mcp`), registered under the name `pragma` in your user config, and signed in.
 2. Who you are in Pragma: your actor id, stored in `~/.claude/pragma/identity.json`.
-3. The repository: its organization and the two default projects for work that belongs to no initiative, stored in `~/.claude/pragma/repositories.json`. The hooks are inert in any other directory.
+3. The directory: its organization and the default projects for work that belongs to no initiative — one catch-all project, one per kind of work (problems, improvements, kinds of your own), or none — stored in `~/.claude/pragma/repositories.json`. The hooks cover the directory and everything under it, and are inert elsewhere.
 4. Permission rules for the Pragma tools the agent calls on your behalf, so neither you nor the auto-mode classifier is asked for each.
 5. Your preference for work of a few minutes: on the need's previous task, or a task of its own.
 
 ### What the plugin reads and writes
 
-Hooks and menu run inside Claude Code, as one module of its plugin runtime: no interpreter, no other dependency. They time the session from its own events, read your identity and the repository's registration under `~/.claude/pragma/`, and keep the session's state in the plugin's store. The only network calls are the agent's own calls to the Pragma MCP server, and the menu's, which go through the same tool path and the same permission check. Nothing is sent anywhere else, and nothing is committed in your repository: the mapping is per person because permissions are.
+Hooks and menu run inside Claude Code, as one module of its plugin runtime: no interpreter, no other dependency. They time the session from its own events, read your identity and the directory's registration under `~/.claude/pragma/`, and keep the session's state in the plugin's store. The only network calls are the agent's own calls to the Pragma MCP server, and the menu's, which go through the same tool path and the same permission check. Nothing is sent anywhere else, and nothing is written in the directory itself: the registration is per person because permissions are.
 
 Requirements: Claude Code 2.1.311 or later.
 

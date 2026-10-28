@@ -48,13 +48,20 @@ export type TimeEntry = { id: string | null; activityId: string; duration: numbe
 /** What the session knows of an item it touched. Epoch seconds. */
 export type TaskRecord = { seenAt?: number; pinnedAt?: number; countedFrom?: number; closedAt?: number; archivedAt?: number }
 
-/** The repository's registration in `~/.claude/pragma/repositories.json`: its organization and default projects. */
+/**
+ * A tracked directory's registration in `~/.claude/pragma/repositories.json` (the file keeps its
+ * first name; its keys are directories, a code repository or not): its organization and default projects.
+ */
 export type Mapping = {
-  /** The repository's root, the key of the registration. */
-  repo: string
+  /** The tracked directory, real path: the key of the registration. The hooks cover it and every directory under it. */
+  directory: string
   organizationId: string | null
   organizationName: string | null
-  /** By kind of work (`fix`, `improvement`, …): the project the work goes to when no initiative project fits. */
+  /**
+   * By kind of work, the project the work goes to when no initiative project fits. The kinds are
+   * the user's (`fix`, `improvement`, `any` for one catch-all project, or their own); empty when
+   * the agent is to ask each time.
+   */
   defaultProjects: Record<string, { id: string; title: string }>
 }
 
@@ -66,7 +73,8 @@ export type TrackingState = {
   sessionId: string
   /** Epoch seconds. */
   startedAt: number
-  repo: string
+  /** The tracked directory the session runs in. */
+  directory: string
   organizationId: string | null
   actorId: string | null
   need: Pin | null
@@ -113,7 +121,7 @@ declare module 'claude-code' {
       hidden: string[]
       /** Objects the menu shows; grows by ten per `show more` press, back to ten on `show fewer`. */
       rowLimit: number
-      /** The time-tracking hooks' knowledge of the session; null while the repository is not registered. */
+      /** The time-tracking hooks' knowledge of the session; null while the directory is not registered. */
       session: TrackingState | null
     }
   }

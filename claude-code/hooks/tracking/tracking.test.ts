@@ -5,14 +5,14 @@ import type { On } from 'claude-code'
 // for the engine and for Pragma.
 
 const HOME = '/home/me'
-const REPO = '/home/me/repo'
+const DIRECTORY = '/home/me/clients/acme'
 const NEED = 'manageable_issue__n1'
 const TASK = 'manageable_task__t1'
 
 const FILES: Record<string, string> = {
   [`${HOME}/.claude/pragma/identity.json`]: JSON.stringify({ actorId: 'actor__me' }),
   [`${HOME}/.claude/pragma/repositories.json`]: JSON.stringify({
-    [REPO]: { organizationId: 'organization__o', organizationName: 'Org', defaultProjects: { improvement: { id: 'project__p', title: 'Improvements' } } },
+    [DIRECTORY]: { organizationId: 'organization__o', organizationName: 'Org', defaultProjects: { improvement: { id: 'project__p', title: 'Improvements' } } },
   }),
 }
 
@@ -49,7 +49,7 @@ function engine(on: On): void {
   mock.store(on)
   mock.clock(on)
   on('session.id', () => ({ value: 'session-1' }))
-  on('session.cwd', () => ({ value: REPO }))
+  on('session.cwd', () => ({ value: DIRECTORY }))
   on('session.repo', () => ({ value: null }))
   on('fs.read', (_, e) => {
     const text = FILES[e.path]
@@ -65,11 +65,11 @@ function engine(on: On): void {
   })
 }
 
-test('a change to the repository is refused once while nothing is pinned; a file elsewhere never', async ($, on) => {
+test('a change under the tracked directory is refused once while nothing is pinned; a file elsewhere never', async ($, on) => {
   engine(on)
-  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
 
-  const edit = { tool: 'Edit', file_path: `${REPO}/src/a.ts`, old_string: 'a', new_string: 'b' } as const
+  const edit = { tool: 'Edit', file_path: `${DIRECTORY}/src/a.ts`, old_string: 'a', new_string: 'b' } as const
   const refused = await $.tool.call(edit)
   expect(refused.deny).toContain('no task pinned')
   const repeated = await $.tool.call(edit)
@@ -81,7 +81,7 @@ test('a change to the repository is refused once while nothing is pinned; a file
 
 test('a transition to in_progress pins the task; a close is refused until the time is logged, then names the need', async ($, on) => {
   engine(on)
-  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
 
   await $.tool.call({ tool: 'mcp__pragma__create_manageable', organizationId: 'organization__o', item: { type: 'issue', projectId: 'project__p', title: 'Login fails' } })
   await $.tool.call({
@@ -96,8 +96,8 @@ test('a transition to in_progress pins the task; a close is refused until the ti
   expect(pinned.deny).toBeUndefined()
   expect(pinned.context?.join('\n')).toContain('Pinned task «Fix the token check» under issue «Login fails» (Improvements)')
 
-  // pinned: the repository's files may change
-  const edit = await $.tool.call({ tool: 'Edit', file_path: `${REPO}/src/a.ts`, old_string: 'a', new_string: 'b' })
+  // pinned: the directory's files may change
+  const edit = await $.tool.call({ tool: 'Edit', file_path: `${DIRECTORY}/src/a.ts`, old_string: 'a', new_string: 'b' })
   expect(edit.deny).toBeUndefined()
 
   const close = { tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_done' } as const
@@ -115,7 +115,7 @@ test('a transition to in_progress pins the task; a close is refused until the ti
 
 test('a time entry on a task the person is not known to be assigned to is refused once', async ($, on) => {
   engine(on)
-  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'mcp__pragma__create_manageable', organizationId: 'organization__o', item: { type: 'task', projectId: 'project__p', title: 'Unassigned' } })
 
   const entry = { tool: 'mcp__pragma__add_time_entry', activityId: TASK, duration: 5, remaining: 0 } as const
@@ -123,10 +123,10 @@ test('a time entry on a task the person is not known to be assigned to is refuse
   expect((await $.tool.call(entry)).deny).toBeUndefined()
 })
 
-test('the protocol rides the system prompt, filled for the repository and the person', async ($, on) => {
+test('the protocol rides the system prompt, filled for the directory and the person', async ($, on) => {
   engine(on)
   on('prompt.compose', () => ({ sections: [] }))
-  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
 
   const composed = await $.prompt.compose({ model: 'model', promptModel: 'model', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] })
   const protocol = composed.sections.find(section => section.id === 'pragma:protocol')

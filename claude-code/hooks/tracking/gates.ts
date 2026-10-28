@@ -3,7 +3,7 @@
 
 import type { TrackingState } from '../../types'
 import { ACTIVITY_TYPES, CLOSING_CATEGORIES, isAssigned, manageableType, minutesSince, titleOf, unloggedSince } from './state'
-import { insideRepository, resolvePath, shellWrittenPaths } from './shell'
+import { insideDirectory, resolvePath, shellWrittenPaths } from './shell'
 import { OVERRIDE_SENTENCE, ambiguitySentence } from './texts'
 import { COUNTED_SPAN_MINUTES, DROPPED_SPAN_MINUTES, hhmm } from './time'
 
@@ -41,16 +41,15 @@ export type WorkGateInput = {
   fields: Record<string, unknown>
   /** The session's working directory, real path. */
   cwd: string
-  /** The repository's root, real path. */
+  /** The tracked directory, real path. */
   root: string
   /** The environment variables the command names. */
   variables: Readonly<Record<string, string>>
 }
 
 /**
- * A change to the repository's files while no task is pinned: refused once. Only the
- * repository's files are gated: a personal file elsewhere (a status line, a scratch file) is
- * nobody's task. An overridden refusal opens the gate until the next prompt.
+ * A change to the tracked directory's files while no task is pinned: refused once. Only its
+ * files are gated: a personal file elsewhere (a status line, a scratch file) is nobody's task. An overridden refusal opens the gate until the next prompt.
  */
 export function gateWork(state: TrackingState, input: WorkGateInput): string | null {
   if (state.task !== null || state.workGateOpen) return null
@@ -58,13 +57,13 @@ export function gateWork(state: TrackingState, input: WorkGateInput): string | n
     input.tool === 'Bash'
       ? shellWrittenPaths(typeof input.fields['command'] === 'string' ? input.fields['command'] : '', input.cwd, input.variables)
       : [resolvePath(stringOf(input.fields['file_path']) ?? stringOf(input.fields['notebook_path']) ?? '', input.cwd, input.variables)]
-  if (!written.some(path => insideRepository(path, input.root))) return null
+  if (!written.some(path => insideDirectory(path, input.root))) return null
   const reason = warned(
     state,
     'unpinned',
     input.tool,
     input.fields,
-    'Pragma: no task pinned for this session, and this call changes files of the repository. Pin first: find or create the need ' +
+    'Pragma: no task pinned for this session, and this call changes files of the tracked directory. Pin first: find or create the need ' +
       '(requirement, or issue for a fix) with `search` across the organization; find or create the task under it (`create_manageable` ' +
       'type task, then `create_link` need --has_response--> task); `available_transitions` on the task, then `transition_manageable` it ' +
       'to the in_progress state. Then tell the user in one line: "Pinned: [<task>](https://app.pragma.pm/items/<taskId>) — ' +

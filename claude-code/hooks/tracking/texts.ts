@@ -32,16 +32,16 @@ export function markdownLink(text: string, url: string): string {
   return `[${text}](${url})`
 }
 
-/** The protocol for this repository and person. */
+/** The protocol for this directory and person. */
 export function fillProtocol(mapping: Mapping, identity: Identity): string {
   const defaults = Object.entries(mapping.defaultProjects)
     .map(([kind, project]) => `  - ${kind}: «${project.title}» (${project.id})`)
     .join('\n')
   return PROTOCOL.replaceAll('{organizationId}', mapping.organizationId ?? '?')
     .replaceAll('{organizationName}', mapping.organizationName ?? '?')
-    .replaceAll('{repo}', mapping.repo.split('/').pop() ?? mapping.repo)
+    .replaceAll('{directory}', mapping.directory)
     .replaceAll('{actorId}', identity.actorId ?? 'unknown — run /pragma:setup, which finds it through get_me')
-    .replaceAll('{defaultProjects}', defaults === '' ? '  (none declared)' : defaults)
+    .replaceAll('{defaultProjects}', defaults === '' ? '  (none declared: ask the user once which project, with the organization\'s projects as options)' : defaults)
     .replaceAll('{shortWorkRule}', identity.taskForShortWork ? SHORT_WORK_ON_OWN_TASK : SHORT_WORK_ON_PREVIOUS_TASK)
 }
 

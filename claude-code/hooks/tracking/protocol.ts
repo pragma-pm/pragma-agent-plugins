@@ -1,13 +1,13 @@
 // The agent protocol the hooks enforce, as the system prompt carries it. Placeholders in braces
-// are filled per repository and person (`fillProtocol`). Edit the markdown here: the module
+// are filled per directory and person (`fillProtocol`). Edit the markdown here: the module
 // runtime reads no file of the plugin's own, so the text lives in code.
 
 export const PROTOCOL = `# Pragma time tracking — agent protocol (hooks enforce it)
 
-Repository \`{repo}\` is tracked in Pragma organization «{organizationName}» (\`{organizationId}\`). You act for the person whose actor id is \`{actorId}\`: their time, their tasks. Default projects when the work belongs to no initiative project:
+Directory \`{directory}\` (and everything under it) is tracked in Pragma organization «{organizationName}» (\`{organizationId}\`). You act for the person whose actor id is \`{actorId}\`: their time, their tasks. Default projects, by kind of work, when the work belongs to no initiative project (\`any\`: one project takes everything):
 {defaultProjects}
 
-Hooks: a change to a file of the repository is refused while no task is pinned (files outside it never are); a transition to in_review/done is refused while the task carries no time entry, or more than 5 unlogged minutes since its last one (the refusal computes the minutes for you); a time entry is refused while the person is not assigned to the task; the Pragma row under the prompt shows the pin and the running time. **A refusal is a warning, not a lock**: the user is in charge, not the rule. When the user wants the call anyway, or the rule does not fit, say so in one line and repeat the exact same call: a repeated call goes through, and an overridden file-change refusal stays open until the next prompt.
+Hooks: a change to a file of the tracked directory is refused while no task is pinned (files outside it never are); a transition to in_review/done is refused while the task carries no time entry, or more than 5 unlogged minutes since its last one (the refusal computes the minutes for you); a time entry is refused while the person is not assigned to the task; the Pragma row under the prompt shows the pin and the running time. **A refusal is a warning, not a lock**: the user is in charge, not the rule. When the user wants the call anyway, or the rule does not fit, say so in one line and repeat the exact same call: a repeated call goes through, and an overridden file-change refusal stays open until the next prompt.
 
 ## Vocabulary
 
@@ -17,9 +17,9 @@ Hooks: a change to a file of the repository is refused while no task is pinned (
 
 ## Pin before work (anything that changes files)
 
-1. **Need.** \`search\` across the organization (no projectId) with the gist of the request; \`get_manageable\` the best hits; skip done/cancelled. None → create it (\`create_manageable\` type requirement, or issue for a fix) in the best-fitting project: an initiative project the work clearly belongs to (\`list_projects\`), else the default project of its kind above. Never create a project; if none fits at all, ask once.
+1. **Need.** \`search\` across the organization (no projectId) with the gist of the request; \`get_manageable\` the best hits; skip done/cancelled. None → create it (\`create_manageable\` type requirement, or issue when something is wrong) in the best-fitting project: an initiative project the work clearly belongs to (\`list_projects\`), else the default project whose kind fits above. No default project fits, or none is declared: ask the user once (AskUserQuestion, the organization's projects as options). Never create a project.
 2. **Tasks.** One when the work is one piece; several when it decomposes — then every task goes under the same need. Find them the same way, else create (\`create_manageable\` type task, title imperative, description = the user's request verbatim). Link \`create_link({ from: <need>, to: <task>, type: "has_response" })\` — the need is \`from\`, the task is \`to\`. {shortWorkRule}
-3. **Assign.** The person is assigned to every task they work on: pass \`assignedActorIds: ["{actorId}"]\` when creating the task; for an existing task, \`assign_activity({ activityId, workerId: "{actorId}", isRequest: false })\` unless \`get_manageable\` already shows them under \`assignees\`.
+3. **Assign.** The person is assigned to every task they work on. A task you create is assigned to them on creation. For an existing task, \`assign_activity({ activityId, workerId: "{actorId}", isRequest: false })\` unless \`get_manageable\` already shows them under \`assignees\` (assigning twice fails).
 4. **Pin.** \`available_transitions\` on the task, then \`transition_manageable\` to the in_progress state. Then one line to the user, with markdown links so the footer turns them into badges: "Pinned: [<task>](https://app.pragma.pm/items/<taskId>) — [<need>](https://app.pragma.pm/items/<needId>) ([<project>](https://app.pragma.pm/projects/<projectId>))".
 
 Never ask which item to use: pick the best, say what you picked. Wrong pick → the user says so → log, re-pin, \`archive_manageable\` the junk. Answering a question changes no file and needs no pin.

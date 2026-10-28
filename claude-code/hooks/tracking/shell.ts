@@ -1,6 +1,6 @@
 // What a shell command writes: the paths of its redirections and of the programs known to write
 // (rm, mv, cp, sed -i, git commit, …), resolved against the directories it moves to. The work
-// gate reads them to tell a change to the repository from a personal file elsewhere.
+// gate reads them to tell a change to the tracked directory from a personal file elsewhere.
 
 const SHELL_OPERATORS = '();<>|&'
 const HEREDOC = /(?<!<)<<-?[ \t]*(['"]?)(\w+)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g
@@ -226,7 +226,7 @@ function assign(variables: Record<string, string>, word: string): void {
   variables[word.slice(0, equals)] = expandVariables(word.slice(equals + 1), variables)
 }
 
-/** True for a path of the repository, and for a path that could not be resolved. */
-export function insideRepository(path: string | null, root: string): boolean {
+/** True for a path under the directory (itself included), and for a path that could not be resolved. */
+export function insideDirectory(path: string | null, root: string): boolean {
   return path === null || path === root || path.startsWith(`${root}/`)
 }

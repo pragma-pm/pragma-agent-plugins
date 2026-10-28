@@ -1,13 +1,13 @@
 ---
 name: setup
-description: Set up Pragma time tracking on this machine and in this repository — the Pragma MCP server, who the user is in Pragma, the repository's organization and default projects, the permission rules for the Pragma tools, the user's preferences. Use when the user runs /pragma:setup, or asks to set up, configure, connect or repair Pragma time tracking.
+description: Set up Pragma time tracking on this machine and in this directory — the Pragma MCP server, who the user is in Pragma, the directory's organization and default projects, the permission rules for the Pragma tools, the user's preferences. Use when the user runs /pragma:setup, or asks to set up, configure, connect or repair Pragma time tracking.
 ---
 
 # Pragma time tracking: setup
 
 You walk the user through the setup of the `pragma` plugin. Every choice is asked with the AskUserQuestion tool, options first, never as a plain-text question. Say what you found before you ask, and ask only what you cannot find.
 
-The hooks are inert until step 3 is done for this repository, so a half-finished setup changes nothing.
+The hooks are inert until step 3 is done for this directory, so a half-finished setup changes nothing.
 
 ## 1. The Pragma MCP server
 
@@ -29,23 +29,29 @@ Call `get_me`: it answers the caller's `actorId`, nickname, email and organizati
 
 A server that does not know `get_me` yet answers that the tool does not exist: find the id through an item instead. Ask the user to name a Pragma item they are assigned to (AskUserQuestion with the items `search` finds for their name as a shortcut, plus "none of these"), `get_manageable` it, read `assignees`, and ask the user to pick themselves among the names shown. If nothing is assigned to the user anywhere, ask them to paste their actor id from the Pragma webapp.
 
-## 3. The repository
+## 3. The directory
 
-The mapping is per person and per repository, kept in `~/.claude/pragma/repositories.json`, never committed: permissions differ from one person to the next.
+The registration is per person and per directory, kept in `~/.claude/pragma/repositories.json` (the file keeps its first name; its keys are directories, a code repository or not), never committed: permissions differ from one person to the next. The hooks cover the registered directory and every directory under it, and are inert elsewhere.
 
-1. The repository root: `git rev-parse --show-toplevel`, resolved (`realpath`). The key of the mapping.
+1. The directory: the one the session runs in, resolved (`realpath`). In a git repository, its root (`git rev-parse --show-toplevel`), so every sub-directory is covered. Someone who keeps one directory per client registers each.
 2. The organization: `list_organizations`. One: take it. Several: AskUserQuestion.
-3. Two default projects, for work that answers no initiative project: one for fixes, one for improvements. `list_projects`; propose the best-named existing ones (bugs, issues, fixes; improvements, maintenance, chores) through AskUserQuestion, with "create them" as an option. Creating: `create_project` named «Internal Bug Reports» and «Continuous Improvements», or the names the user gives.
+3. The default projects: where work goes when it answers no initiative project. Ask (AskUserQuestion) how the user files such work:
+   - **One catch-all project.** `list_projects`; propose the best-fitting existing project, with «create one» as an option. Stored under the key `any`.
+   - **One project per kind of work.** Propose the two usual kinds — problems (something is wrong) and improvements (something is wanted) — and ask (AskUserQuestion, multiSelect) which to keep and which others to add: the user may name any kind of their own (client requests, administration, …). Each kind gets a short lowercase key (`fix`, `improvement`, or a word for the user's kind) and a project: `list_projects`, propose the best-named existing one per kind, else create.
+   - **None.** The agent asks which project each time no initiative project fits. Stored as `{}`.
+
+   Creating a project: propose a name in the user's language and line of work («Problems», «Improvements» — software terms only when the organization's other projects use them) and validate it with the user (AskUserQuestion: the proposed name, «another name») before `create_project`.
 4. Write the entry, merged into the existing file:
 
 ```json
 {
-  "/abs/path/to/repository": {
+  "/abs/path/to/directory": {
     "organizationId": "organization__…",
     "organizationName": "…",
     "defaultProjects": {
-      "fix": { "id": "project__…", "title": "…" },
-      "improvement": { "id": "project__…", "title": "…" }
+      "fix": { "id": "project__…", "title": "Problems" },
+      "improvement": { "id": "project__…", "title": "Improvements" },
+      "clients": { "id": "project__…", "title": "Client requests" }
     }
   }
 }
@@ -85,6 +91,6 @@ Store it in `identity.json` as `"preferences": { "taskForShortWork": false | tru
 
 ## 6. Finish
 
-- Tell the user to run `/clear` or start a new session: the protocol the hooks inject arrives at session start. From then on, in this repository, the agent pins a task before any change and logs its time.
+- Tell the user to run `/clear` or start a new session: the protocol the hooks inject arrives at session start. From then on, in this directory and under it, the agent pins a task before any change and logs its time.
 - Point at the `◷ Pragma` button under the prompt: the session's objects, their logged minutes, adjust and delete.
-- Suggest a first test: a one-line change, to watch the pin and the log happen.
+- Suggest a first test: ask for a small change to a file of the directory — a note, a document, a line of code, whatever the work is — and watch the pin and the log happen.

@@ -20,10 +20,10 @@ const RETENTION_DAYS = 14
 const LEDGER_KEY = 'ledger'
 
 const noSession: TrackingState | null = null
-/** The session's tracking state; null while the repository is not registered. The menu declares the same reference to read it. */
+/** The session's tracking state; null while the directory is not registered. The menu declares the same reference to read it. */
 const sessionAtom = atom({ plugin: 'pragma', key: 'session' } as const, noSession)
 
-// The repository's registration and the person, read from ~/.claude/pragma at the session's
+// The directory's registration and the person, read from ~/.claude/pragma at the session's
 // start and at each prompt: the setup skill writes them mid-session.
 let mapping: Mapping | null = null
 let identity: Identity = { actorId: null, taskForShortWork: false }
@@ -58,7 +58,7 @@ function parseIdentity(value: unknown): Identity {
   }
 }
 
-function parseMapping(repo: string, entry: Record<string, unknown>): Mapping {
+function parseMapping(directory: string, entry: Record<string, unknown>): Mapping {
   const organizationId = entry['organizationId']
   const organizationName = entry['organizationName']
   const defaultProjects: Mapping['defaultProjects'] = {}
@@ -72,7 +72,7 @@ function parseMapping(repo: string, entry: Record<string, unknown>): Mapping {
     }
   }
   return {
-    repo,
+    directory,
     organizationId: typeof organizationId === 'string' ? organizationId : null,
     organizationName: typeof organizationName === 'string' ? organizationName : null,
     defaultProjects,
@@ -97,17 +97,18 @@ async function realCwd($: EngineInterface): Promise<string> {
   return stat?.realPath ?? cwd
 }
 
-async function repositoryCandidates($: EngineInterface): Promise<string[]> {
+/** The directories a registration may be keyed by: the git root when there is one, the working directory, their parents. */
+async function directoryCandidates($: EngineInterface): Promise<string[]> {
   const candidates: string[] = []
-  const repo = await $.session.repo().catch(() => null)
-  if (repo !== null) candidates.push(repo.root)
+  const repository = await $.session.repo().catch(() => null)
+  if (repository !== null) candidates.push(repository.root)
   const cwd = await $.session.cwd()
   for (const base of [await realCwd($), cwd]) candidates.push(...ancestorsOf(base))
   return [...new Set(candidates)]
 }
 
 /**
- * The registration of the nearest registered repository (a key of repositories.json that is the
+ * The registration of the nearest registered directory (a key of repositories.json that is the
  * working directory or one of its parents) and the person; null when none is registered, or
  * when PRAGMA_TIME_GATE is off.
  */
@@ -117,10 +118,10 @@ export async function refreshRegistration($: EngineInterface): Promise<Mapping |
   if (gate?.toLowerCase() === 'off') return null
   const home = (await $.env.get('HOME')) ?? ''
   identity = parseIdentity(await readJson($, `${home}/.claude/pragma/identity.json`))
-  const repositories = await readJson($, `${home}/.claude/pragma/repositories.json`)
-  if (!isRecord(repositories)) return null
-  for (const candidate of await repositoryCandidates($)) {
-    const entry = repositories[candidate]
+  const registrations = await readJson($, `${home}/.claude/pragma/repositories.json`)
+  if (!isRecord(registrations)) return null
+  for (const candidate of await directoryCandidates($)) {
+    const entry = registrations[candidate]
     if (isRecord(entry)) {
       mapping = parseMapping(candidate, entry)
       break
@@ -129,7 +130,7 @@ export async function refreshRegistration($: EngineInterface): Promise<Mapping |
   return mapping
 }
 
-/** The session's state, restored from the store after a restart; null while the repository is not registered. */
+/** The session's state, restored from the store after a restart; null while the directory is not registered. */
 export async function loadState($: EngineInterface): Promise<TrackingState | null> {
   if (mapping === null) return null
   const sessionId = await $.session.id()
@@ -163,7 +164,7 @@ async function pruneStore($: EngineInterface, now: number): Promise<void> {
 
 type LedgerRow = {
   sessionId: string
-  repo: string
+  directory: string
   needId: string | null
   needTitle: string | null
   taskId: string | null
@@ -176,7 +177,7 @@ type LedgerRow = {
 }
 
 function isLedgerRow(value: unknown): value is LedgerRow {
-  return isRecord(value) && typeof value['sessionId'] === 'string' && typeof value['repo'] === 'string' && typeof value['unloggedMinutes'] === 'number' && typeof value['updatedAt'] === 'number'
+  return isRecord(value) && typeof value['sessionId'] === 'string' && typeof value['directory'] === 'string' && typeof value['unloggedMinutes'] === 'number' && typeof value['updatedAt'] === 'number'
 }
 
 async function readLedger($: EngineInterface): Promise<LedgerRow[]> {
@@ -192,7 +193,7 @@ async function upsertLedger($: EngineInterface, state: TrackingState, now: numbe
     const logged = loggedMinutes(state)
     rows.push({
       sessionId: state.sessionId,
-      repo: state.repo,
+      directory: state.directory,
       needId: state.need?.id ?? null,
       needTitle: state.need === null ? null : titleOf(state, state.need.id),
       taskId: state.task?.id ?? null,
@@ -207,9 +208,9 @@ async function upsertLedger($: EngineInterface, state: TrackingState, now: numbe
   await $.store.set(LEDGER_KEY, rows)
 }
 
-async function ledgerReminders($: EngineInterface, repo: string, sessionId: string): Promise<string[]> {
+async function ledgerReminders($: EngineInterface, directory: string, sessionId: string): Promise<string[]> {
   return (await readLedger($))
-    .filter(row => row.repo === repo && row.sessionId !== sessionId && row.unloggedMinutes >= LEDGER_THRESHOLD_MINUTES)
+    .filter(row => row.directory === directory && row.sessionId !== sessionId && row.unloggedMinutes >= LEDGER_THRESHOLD_MINUTES)
     .map(
       row =>
         `- ${row.date}: ~${hm(row.unloggedMinutes)} unlogged on «${row.taskTitle ?? '?'}» (${row.taskId ?? 'no task id'}) under ` +
@@ -274,7 +275,7 @@ async function gate($: EngineInterface, state: TrackingState, tool: string, fiel
   if (WRITE_TOOLS.has(tool)) {
     if (state.task !== null || state.workGateOpen || mapping === null) return null
     const cwd = await realCwd($)
-    return gateWork(state, { tool, fields, cwd, root: mapping.repo, variables: await shellVariables($, cwd) })
+    return gateWork(state, { tool, fields, cwd, root: mapping.directory, variables: await shellVariables($, cwd) })
   }
   if (tool === `${TOOL_PREFIX}transition_manageable`) return gateClose(state, fields, now)
   if (tool === `${TOOL_PREFIX}add_time_entry`) return gateLog(state, fields)
@@ -307,9 +308,9 @@ export function registerTracking(on: On): void {
     const sections: PromptComposeSection[] = []
     if (mapping !== null) {
       sections.push({ id: 'pragma:protocol', scope: 'session', text: fillProtocol(mapping, identity) })
-      const reminders = await ledgerReminders($, mapping.repo, await $.session.id())
+      const reminders = await ledgerReminders($, mapping.directory, await $.session.id())
       if (reminders.length > 0) {
-        sections.push({ id: 'pragma:unlogged', scope: 'session', text: `Unlogged time from previous sessions in this repository:\n${reminders.join('\n')}` })
+        sections.push({ id: 'pragma:unlogged', scope: 'session', text: `Unlogged time from previous sessions in this directory:\n${reminders.join('\n')}` })
       }
     }
     sections.push(...(await pendingSections($)))
