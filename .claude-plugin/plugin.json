@@ -1,6 +1,6 @@
 {
   "name": "pragma",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pragma time tracking for Claude Code: hooks that pin a task before any change and gate a close on its logged time, and a Pragma menu under the prompt.",
   "author": { "name": "Pragma", "url": "https://pragma.pm" },
   "homepage": "https://pragma.pm",

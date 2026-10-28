@@ -9,10 +9,6 @@ You walk the user through the setup of the `pragma` plugin. Every choice is aske
 
 The hooks are inert until step 3 is done for this repository, so a half-finished setup changes nothing.
 
-## 0. Preconditions
-
-Run `python3 --version`. The hooks are Python; without `python3` on the PATH, stop and tell the user to install it.
-
 ## 1. The Pragma MCP server
 
 Run `claude mcp get pragma`.

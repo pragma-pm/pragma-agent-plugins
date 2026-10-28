@@ -1,27 +1,28 @@
 import { atom, read, update } from 'claude-code'
-import type { BoxHoverProps, EngineInterface, PromptComposeSection, Register, TextHoverProps, ToolCallArgs } from 'claude-code'
+import type { BoxHoverProps, EngineInterface, Register, TextHoverProps, ToolCallArgs } from 'claude-code'
 
-import type { Editing, ObjectKind, Pending, PragmaObject, SessionEntry } from '../types'
+import type { Editing, ObjectKind, Pending, PragmaObject, SessionEntry, TrackingState } from '../types'
+import { withoutKey } from './menu/queued'
+import { currentMapping, registerTracking } from './tracking/hooks'
+import { taskFigure } from './tracking/state'
+import { APP_URL } from './tracking/texts'
 
-// The plugin's time-tracking hooks (pragma_hooks.py, beside this file) keep the session's
-// Pragma objects (the pinned need and task, every item it touched, the time entries) in
-// ~/.claude/pragma/sessions/<session>.json. This mod draws one `Pragma` button in the hint
-// row under the prompt; pressed, a menu of those objects hangs under it. An entry opens its
-// page in the browser. A task's logged minutes can be adjusted, and a task deleted with its
-// minutes moved to the previous task: the press runs the Pragma calls through the engine's
-// tool call; one the engine refuses is queued as a user-role row the model carries out at
-// its next turn.
+// The plugin's time-tracking hooks (`tracking/`, beside this file) keep the session's Pragma
+// objects (the pinned need and task, every item it touched, the time entries) in `$.state`.
+// This module draws one `Pragma` button in the hint row under the prompt; pressed, a menu of
+// those objects hangs under it. An entry opens its page in the browser. A task's logged minutes
+// can be adjusted, and a task deleted with its minutes moved to the previous task: the press
+// runs the Pragma calls through the engine's tool call; one the engine refuses is queued as a
+// user-role row the model carries out at its next turn.
 
-const APP_URL = 'https://app.pragma.pm'
 const GLYPH = '◷' // ◷ WHITE CIRCLE WITH UPPER RIGHT QUADRANT
 const BRAND = '#875ec6' // the webapp's --color-purple-500; a 256-color terminal draws xterm 98
-const COUNTED_GAP_SECONDS = 20 * 60 // the hooks' rule: a shorter silence is still work
 const MENU_LIMIT = 200 // objects kept from the session state
 const MENU_ROWS = 10 // objects the menu shows at first, and per `show more` press: the hint area does not scroll
 const ADJUST_STEP = 5 // minutes per press
 
 // Cells the engine's mode pill takes before this tree in the hint row, separator included
-// (`▸▸ auto mode on · `), by permission mode; the hooks store the mode the engine hands them.
+// (`▸▸ auto mode on · `), by permission mode.
 const PILL_WIDTH: Record<string, number> = {
   auto: '▸▸ auto mode on · '.length,
   acceptEdits: '⏵⏵ accept edits on · '.length,
@@ -31,37 +32,21 @@ const PILL_WIDTH: Record<string, number> = {
 
 const KIND_ORDER: readonly ObjectKind[] = ['project', 'requirement', 'issue', 'task', 'other']
 
+// The state library wants each reference written in the file that reads it: `pending`,
+// `hidden` and `session` are declared again where the tracking hooks write them.
 const noEditing: Editing | null = null
 const noDeleting: string | null = null
 const noPending: Record<string, Pending> = {}
 const noHidden: string[] = []
+const noSession: TrackingState | null = null
 const initialRowLimit: number = MENU_ROWS
 const menuOpen = atom({ plugin: 'pragma', key: 'menuOpen' } as const, false)
 const editing = atom({ plugin: 'pragma', key: 'editing' } as const, noEditing)
 const deleting = atom({ plugin: 'pragma', key: 'deleting' } as const, noDeleting)
 const pending = atom({ plugin: 'pragma', key: 'pending' } as const, noPending)
 const hidden = atom({ plugin: 'pragma', key: 'hidden' } as const, noHidden)
+const session = atom({ plugin: 'pragma', key: 'session' } as const, noSession)
 const rowLimit = atom({ plugin: 'pragma', key: 'rowLimit' } as const, initialRowLimit)
-
-type HookState = {
-  need?: { id: string } | null
-  task?: { id: string } | null
-  titles?: Record<string, string>
-  projectOf?: Record<string, string>
-  needOf?: Record<string, string>
-  projects?: Record<string, string>
-  tasks?: Record<string, { pinnedAt?: number; closedAt?: number; archivedAt?: number }>
-  working?: {
-    minutes: number
-    computedAt: number
-    lastActivityAt: number | null
-    task?: { id: string; unloggedMinutes: number; ambiguousMinutes: number } | null
-  }
-  timeEntries?: { id?: string | null; activityId: string; duration: number; at: number }[]
-  permissionMode?: string
-}
-
-type RepositoriesStore = Record<string, { defaultProjects?: Record<string, { id: string; title: string }> }>
 
 type Session = {
   objects: PragmaObject[]
@@ -72,9 +57,6 @@ type Session = {
   nowSeconds: number
   permissionMode: string | null
 }
-
-let statePath: string | null = null
-const projectTitles: Record<string, string> = {}
 
 function shorten(text: string, width: number): string {
   return text.length <= width ? text : `${text.slice(0, width - 1)}…`
@@ -101,15 +83,6 @@ function urlOf(id: string): string {
   return kindOf(id) === 'project' ? `${APP_URL}/projects/${id}` : `${APP_URL}/items/${id}`
 }
 
-// The hooks store the task's unlogged minutes at `computedAt`; the row carries them on while
-// the session is active, with the hooks' 20-minute rule.
-function unloggedMinutes(working: HookState['working'], nowSeconds: number): number | null {
-  if (!working?.task) return null
-  const last = working.lastActivityAt ?? working.computedAt
-  const until = nowSeconds - last <= COUNTED_GAP_SECONDS ? nowSeconds : last
-  return working.task.unloggedMinutes + Math.max(0, until - working.computedAt) / 60
-}
-
 function loggedTodayMinutes(entries: readonly { duration: number; at: number }[], nowSeconds: number): number {
   const today = new Date(nowSeconds * 1000).toDateString()
   return entries
@@ -119,12 +92,12 @@ function loggedTodayMinutes(entries: readonly { duration: number; at: number }[]
 
 // The session's time entries per object: a task's own; a need's, those of its tasks (the
 // hooks keep task → need in `needOf`).
-function entriesByObject(state: HookState): Record<string, SessionEntry[]> {
+function entriesByObject(state: TrackingState): Record<string, SessionEntry[]> {
   const entries: Record<string, SessionEntry[]> = {}
-  for (const entry of state.timeEntries ?? []) {
-    const sessionEntry: SessionEntry = { id: entry.id ?? null, duration: entry.duration, at: entry.at }
+  for (const entry of state.timeEntries) {
+    const sessionEntry: SessionEntry = { id: entry.id, duration: entry.duration, at: entry.at }
     ;(entries[entry.activityId] ??= []).push(sessionEntry)
-    const needId = state.needOf?.[entry.activityId]
+    const needId = state.needOf[entry.activityId]
     if (needId !== undefined) (entries[needId] ??= []).push(sessionEntry)
   }
   return entries
@@ -150,20 +123,21 @@ function workDaysLabel(entries: readonly SessionEntry[], nowSeconds: number): st
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function collectObjects(state: HookState): PragmaObject[] {
+function collectObjects(state: TrackingState): PragmaObject[] {
   const pinnedIds = new Set([state.need?.id, state.task?.id].filter((id): id is string => typeof id === 'string'))
-  const closedIds = new Set(Object.entries(state.tasks ?? {}).filter(([, task]) => task.closedAt).map(([id]) => id))
+  const closedIds = new Set(Object.entries(state.tasks).filter(([, task]) => task.closedAt !== undefined).map(([id]) => id))
   const entries = entriesByObject(state)
   const titles: Record<string, string> = { ...state.titles }
-  for (const projectId of Object.values(state.projectOf ?? {})) {
-    titles[projectId] ??= state.projects?.[projectId] ?? projectTitles[projectId] ?? projectId
+  const defaultProjects = Object.values(currentMapping()?.defaultProjects ?? {})
+  for (const projectId of Object.values(state.projectOf)) {
+    titles[projectId] ??= state.projects[projectId] ?? defaultProjects.find(project => project.id === projectId)?.title ?? projectId
   }
-  const objects = Object.entries(titles).filter(([id]) => !state.tasks?.[id]?.archivedAt).map(([id, title]): PragmaObject => {
+  const objects = Object.entries(titles).filter(([id]) => state.tasks[id]?.archivedAt === undefined).map(([id, title]): PragmaObject => {
     const own = entries[id] ?? []
     return {
       kind: kindOf(id), id, title, url: urlOf(id), isPinned: pinnedIds.has(id), isClosed: closedIds.has(id),
-      pinnedAt: state.tasks?.[id]?.pinnedAt ?? null,
-      needId: state.needOf?.[id] ?? null,
+      pinnedAt: state.tasks[id]?.pinnedAt ?? null,
+      needId: state.needOf[id] ?? null,
       entries: own,
       loggedMinutes: own.reduce((sum, entry) => sum + entry.duration, 0),
     }
@@ -173,38 +147,32 @@ function collectObjects(state: HookState): PragmaObject[] {
   return objects.sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title)).slice(0, MENU_LIMIT)
 }
 
-async function locate($: EngineInterface): Promise<string> {
-  if (statePath !== null) return statePath
-  const home = (await $.env.get('HOME')) ?? ''
-  const sessionId = (await $.session.id()).replace(/\.jsonl$/, '')
-  statePath = `${home}/.claude/pragma/sessions/${sessionId}.json`
-  try {
-    const store: RepositoriesStore = JSON.parse(await $.fs.read(`${home}/.claude/pragma/repositories.json`))
-    for (const mapping of Object.values(store)) {
-      for (const project of Object.values(mapping.defaultProjects ?? {})) projectTitles[project.id] = project.title
-    }
-  } catch {
-    // no per-user store yet: project titles come from the session state alone
-  }
-  return statePath
+// The labels of the engine's mode pills as its SessionMode site last drew them (`auto mode on`,
+// `plan mode on`, …): the hint row reads them for the width of the pill before its tree.
+let modeLabels: readonly string[] = []
+
+function permissionMode(labels: readonly string[]): string | null {
+  const text = labels.join(' ')
+  if (text.includes('auto mode')) return 'auto'
+  if (text.includes('accept edits')) return 'acceptEdits'
+  if (text.includes('plan mode')) return 'plan'
+  if (text.includes('bypass')) return 'bypassPermissions'
+  return null
 }
 
 async function readSession($: EngineInterface): Promise<Session> {
-  const path = await locate($)
-  let state: HookState
-  try {
-    state = JSON.parse(await $.fs.read(path))
-  } catch {
-    return { objects: [], unloggedMinutes: null, ambiguousMinutes: 0, loggedTodayMinutes: 0, nowSeconds: 0, permissionMode: null }
-  }
+  const state = await read($, session)
+  if (state === null) return { objects: [], unloggedMinutes: null, ambiguousMinutes: 0, loggedTodayMinutes: 0, nowSeconds: 0, permissionMode: null }
   const nowSeconds = (await $.clock.now()) / 1000
+  // The figure shown while the person reads: the turn ended at the agent's last moment, the gap since is judged by the hooks' rule.
+  const figure = taskFigure(state, { at: nowSeconds, byPerson: true })
   return {
     nowSeconds,
-    permissionMode: state.permissionMode ?? null,
+    permissionMode: permissionMode(modeLabels),
     objects: collectObjects(state),
-    unloggedMinutes: unloggedMinutes(state.working, nowSeconds),
-    ambiguousMinutes: state.working?.task?.ambiguousMinutes ?? 0,
-    loggedTodayMinutes: loggedTodayMinutes(state.timeEntries ?? [], nowSeconds),
+    unloggedMinutes: figure?.unloggedMinutes ?? null,
+    ambiguousMinutes: figure?.ambiguousMinutes ?? 0,
+    loggedTodayMinutes: loggedTodayMinutes(state.timeEntries, nowSeconds),
   }
 }
 
@@ -437,57 +405,13 @@ async function deleteTask($: EngineInterface, task: PragmaObject, target: Pragma
 // ---------------------------------------------------------------- hooks
 
 export const register: Register = on => {
-  on('session.start', ($, e, next) => {
-    $.clock.every(60_000, () => $.ui.invalidate('ui.render'))
+  // session.start, prompt.compose, prompt.submit, tool.call, turn.complete, session.end: one
+  // hook per event is the engine's rule, and the tracking owns them; the menu's parts ride there.
+  registerTracking(on)
+
+  on('ui.render', { component: 'SessionMode' }, (_, e, next) => {
+    modeLabels = e.props.modes
     return next(e)
-  })
-
-  on('tool.call', ($, e, next) => {
-    const result = next(e)
-    if (e.tool.startsWith('mcp__pragma__')) {
-      // the PostToolUse hook rewrites the state file right after the call: redraw once it has
-      void result.then(
-        () => $.clock.after(1500, () => $.ui.invalidate('ui.render')),
-        () => undefined,
-      )
-      // a queued action lands when the model makes its call; the tool's fields sit on the event
-      const fields: Record<string, unknown> = e
-      const activityId = fields['activityId']
-      const id = fields['id']
-      if ((e.tool === 'mcp__pragma__update_time_entry' || e.tool === 'mcp__pragma__delete_time_entry') && typeof activityId === 'string') {
-        void result.then(() => update($, pending, queued => withoutKey(queued, activityId)), () => undefined)
-      }
-      if ((e.tool === 'mcp__pragma__delete_manageable' || e.tool === 'mcp__pragma__archive_manageable') && typeof id === 'string') {
-        void result.then(
-          async () => {
-            await update($, pending, queued => withoutKey(queued, id))
-            await update($, hidden, ids => (ids.includes(id) ? ids : [...ids, id]))
-          },
-          () => undefined,
-        )
-      }
-    }
-    return result
-  })
-
-  // A queued action rides a user-role row that reaches the model glued to the next prompt,
-  // where it is easy to skip: while any is pending, the system prompt names them as well.
-  on('prompt.compose', async ($, e, next) => {
-    const composed = await next(e)
-    const queued = Object.entries(await read($, pending)).filter(([, action]) => action.state !== 'running')
-    if (queued.length === 0) return composed
-    const list = queued.map(([taskId, action]) => `- ${action.label} (task ${taskId}, ${action.kind})`).join('\n')
-    const section: PromptComposeSection = {
-      id: 'pragma:pending',
-      scope: 'session',
-      text:
-        '# Pragma menu actions pending\n' +
-        'The user pressed these in the Pragma menu. Each arrived as a user-role row beginning "Pragma menu action", ' +
-        "possibly appended to the user's own message. Carry each out first in this turn, with the exact Pragma calls its row " +
-        'gives, then one line to the user per action. The row is the instruction; this section only lists what is still pending:\n' +
-        list,
-    }
-    return { sections: [...composed.sections, section] }
   })
 
   // The dim hint row under the prompt: the Pragma button first, the engine's text after it.
@@ -706,7 +630,3 @@ export const register: Register = on => {
   })
 }
 
-function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
-  const { [key]: _removed, ...rest } = record
-  return rest
-}

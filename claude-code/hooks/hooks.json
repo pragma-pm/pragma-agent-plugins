@@ -1,25 +1,3 @@
 {
-  "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude-code/hooks/pragma_hooks.py\" session-start", "timeout": 20 } ] }
-    ],
-    "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude-code/hooks/pragma_hooks.py\" prompt", "timeout": 20 } ] }
-    ],
-    "PreToolUse": [
-      { "matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude-code/hooks/pragma_hooks.py\" gate-work", "timeout": 20 } ] },
-      { "matcher": "mcp__pragma__transition_manageable", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude-code/hooks/pragma_hooks.py\" gate-close", "timeout": 20 } ] },
-      { "matcher": "mcp__pragma__add_time_entry", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude-code/hooks/pragma_hooks.py\" gate-log", "timeout": 20 } ] }
-    ],
-    "PostToolUse": [
-      { "matcher": "mcp__pragma__.*", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude-code/hooks/pragma_hooks.py\" track", "timeout": 20 } ] }
-    ],
-    "Stop": [
-      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude-code/hooks/pragma_hooks.py\" stop", "timeout": 20 } ] }
-    ],
-    "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude-code/hooks/pragma_hooks.py\" session-end", "timeout": 20 } ] }
-    ]
-  },
   "modules": ["./register.tsx"]
 }
