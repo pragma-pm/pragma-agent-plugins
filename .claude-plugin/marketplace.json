@@ -1,0 +1,12 @@
+{
+  "name": "pragma.pm",
+  "description": "Plugins by Pragma, the project-management application built around a traceability graph.",
+  "owner": { "name": "Pragma", "url": "https://pragma.pm" },
+  "plugins": [
+    {
+      "name": "pragma",
+      "source": "./",
+      "description": "Time tracking for Claude Code: pin a Pragma task before work, log its time, close it; a Pragma menu under the prompt."
+    }
+  ]
+}

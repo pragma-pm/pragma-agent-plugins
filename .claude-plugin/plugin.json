@@ -1,0 +1,13 @@
+{
+  "name": "pragma",
+  "version": "0.1.0",
+  "description": "Pragma time tracking for Claude Code: hooks that pin a task before any change and gate a close on its logged time, and a Pragma menu under the prompt.",
+  "author": { "name": "Pragma", "url": "https://pragma.pm" },
+  "homepage": "https://pragma.pm",
+  "repository": "https://github.com/pragma-pm/pragma-agent-plugins",
+  "license": "Unlicense",
+  "keywords": ["pragma", "time-tracking", "project-management", "traceability"],
+  "hooks": "./claude-code/hooks/hooks.json",
+  "skills": "./claude-code/skills",
+  "types": "./claude-code/types/index.d.ts"
+}

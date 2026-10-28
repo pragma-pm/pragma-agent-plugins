@@ -1,0 +1,4 @@
+# written by the Claude Code engine when it loads the plugin
+.claude-plugin/types/
+__pycache__/
+.DS_Store
