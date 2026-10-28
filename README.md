@@ -16,7 +16,7 @@ What a tracked session looks like:
 - Before the agent changes a file, it pins a Pragma task: it finds or creates the requirement or issue the work answers, finds or creates a task under it, assigns you, moves the task to *in progress*. A file change while nothing is pinned is refused once.
 - When the task is done, the agent logs the time you spent, as the hooks timed the session, and closes the task. A close without a time entry, or with unlogged minutes beyond a small slack, is refused once with the minutes computed.
 - A closed task may complete its requirement or issue: the agent then offers to move it, as a choice among its allowed transitions. You decide; the agent never closes a requirement or an issue on its own. Every such question is an interactive choice, never a line of text to answer.
-- A `◷ Pragma` button under the prompt opens a menu of the session's Pragma objects: the project, the requirements and issues, the tasks, with the minutes logged on each. An entry opens its page. A task's minutes can be adjusted, a task deleted with its minutes moved to the previous one.
+- A `◷ Pragma` button under the prompt opens a menu of the session's Pragma objects: the project, the requirements and issues, the tasks, with the minutes logged on each. It is there from the session start in a registered directory, uncolored until the session touches a Pragma item. An entry opens its page. A task's minutes can be adjusted, a task deleted with its minutes moved to the previous one.
 
 Every refusal is a warning, not a lock: the same call repeated goes through. The person is in charge, not the rule.
 

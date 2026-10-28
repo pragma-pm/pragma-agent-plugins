@@ -418,11 +418,15 @@ export const register: Register = on => {
   // While the menu is open, the rows under the button list the session's Pragma objects by
   // kind, the way a dropdown hangs under its control; an entry opens its page and the menu
   // stays open until the button is pressed again.
+  // In a registered directory the button is there from the session start, so a person who just
+  // ran the setup finds it; it stays uncolored until the session touches a Pragma item. Outside
+  // one the hooks are inert and the row is the engine's own.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const session = await readSession($)
     const hiddenIds = await read($, hidden)
     const objects = session.objects.filter(object => !hiddenIds.includes(object.id))
-    if (objects.length === 0) return next(e)
+    const isActive = objects.length > 0
+    if (!isActive && currentMapping() === null) return next(e)
 
     const { Box, Button, Link, Text } = $.ui.resolve(e)
     const isOpen = await read($, menuOpen)
@@ -438,7 +442,7 @@ export const register: Register = on => {
       <Box flexDirection="row" paddingLeft={isOpen ? pill : 0}>
         <Text dimColor>{hint === '' ? '' : `${hint} · `}</Text>
         <Button key="pragma" plain onPress={toggle}>
-          <Text color={BRAND}>{GLYPH} Pragma {isOpen ? '▴' : '▾'}</Text>
+          <Text {...(isActive ? { color: BRAND } : { dimColor: true })}>{GLYPH} Pragma {isOpen ? '▴' : '▾'}</Text>
         </Button>
         <Text dimColor>{separated(isOpen ? timeLabel(session) : taskLabel(session))}</Text>
       </Box>
@@ -596,6 +600,13 @@ export const register: Register = on => {
         </Box>
       </Box>
     ))
+    if (!isActive) {
+      rows.push(
+        <Box key="empty" flexDirection="row" paddingLeft={2}>
+          <Text dimColor>No Pragma item in this session yet: the agent pins a task before its first file change.</Text>
+        </Box>,
+      )
+    }
     // The hint area under the prompt does not scroll: past MENU_ROWS objects the menu pages.
     if (notShown > 0 || limit > MENU_ROWS) {
       rows.push(
