@@ -9,26 +9,18 @@ import { APP_URL } from './tracking/texts'
 
 // The plugin's time-tracking hooks (`tracking/`, beside this file) keep the session's Pragma
 // objects (the pinned need and task, every item it touched, the time entries) in `$.state`.
-// This module draws one `Pragma` button in the hint row under the prompt; pressed, a menu of
-// those objects hangs under it. An entry opens its page in the browser. A task's logged minutes
-// can be adjusted, and a task deleted with its minutes moved to the previous task: the press
-// runs the Pragma calls through the engine's tool call; one the engine refuses is queued as a
-// user-role row the model carries out at its next turn.
+// This module draws one `Pragma` button in the band above the prompt; pressed, a menu of those
+// objects hangs under it. An entry opens its page in the browser. A task's logged minutes can be
+// adjusted, and a task deleted with its minutes moved to the previous task: the press runs the
+// Pragma calls through the engine's tool call; one the engine refuses is queued as a user-role
+// row the model carries out at its next turn. The hint row under the prompt stays the engine's,
+// the pinned task's unlogged minutes added at its end.
 
 const GLYPH = '◷' // ◷ WHITE CIRCLE WITH UPPER RIGHT QUADRANT
 const BRAND = '#875ec6' // the webapp's --color-purple-500; a 256-color terminal draws xterm 98
 const MENU_LIMIT = 200 // objects kept from the session state
-const MENU_ROWS = 10 // objects the menu shows at first, and per `show more` press: the hint area does not scroll
+const MENU_ROWS = 10 // objects the menu shows at first, and per `show more` press
 const ADJUST_STEP = 5 // minutes per press
-
-// Cells the engine's mode pill takes before this tree in the hint row, separator included
-// (`▸▸ auto mode on · `), by permission mode.
-const PILL_WIDTH: Record<string, number> = {
-  auto: '▸▸ auto mode on · '.length,
-  acceptEdits: '⏵⏵ accept edits on · '.length,
-  plan: '⏸ plan mode on · '.length,
-  bypassPermissions: '⏵⏵ bypass permissions on · '.length,
-}
 
 const KIND_ORDER: readonly ObjectKind[] = ['project', 'requirement', 'issue', 'task', 'other']
 
@@ -55,7 +47,6 @@ type Session = {
   ambiguousMinutes: number
   loggedTodayMinutes: number
   nowSeconds: number
-  permissionMode: string | null
 }
 
 function shorten(text: string, width: number): string {
@@ -147,28 +138,14 @@ function collectObjects(state: TrackingState): PragmaObject[] {
   return objects.sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title)).slice(0, MENU_LIMIT)
 }
 
-// The labels of the engine's mode pills as its SessionMode site last drew them (`auto mode on`,
-// `plan mode on`, …): the hint row reads them for the width of the pill before its tree.
-let modeLabels: readonly string[] = []
-
-function permissionMode(labels: readonly string[]): string | null {
-  const text = labels.join(' ')
-  if (text.includes('auto mode')) return 'auto'
-  if (text.includes('accept edits')) return 'acceptEdits'
-  if (text.includes('plan mode')) return 'plan'
-  if (text.includes('bypass')) return 'bypassPermissions'
-  return null
-}
-
 async function readSession($: EngineInterface): Promise<Session> {
   const state = await read($, session)
-  if (state === null) return { objects: [], unloggedMinutes: null, ambiguousMinutes: 0, loggedTodayMinutes: 0, nowSeconds: 0, permissionMode: null }
+  if (state === null) return { objects: [], unloggedMinutes: null, ambiguousMinutes: 0, loggedTodayMinutes: 0, nowSeconds: 0 }
   const nowSeconds = (await $.clock.now()) / 1000
   // The figure shown while the person reads: the turn ended at the agent's last moment, the gap since is judged by the hooks' rule.
   const figure = taskFigure(state, { at: nowSeconds, byPerson: true })
   return {
     nowSeconds,
-    permissionMode: permissionMode(modeLabels),
     objects: collectObjects(state),
     unloggedMinutes: figure?.unloggedMinutes ?? null,
     ambiguousMinutes: figure?.ambiguousMinutes ?? 0,
@@ -207,21 +184,6 @@ function sections(objects: readonly PragmaObject[], limit: number): Section[] {
   return KIND_ORDER.map(kind => ({ kind, objects: kept.filter(object => object.kind === kind) })).filter(
     section => section.objects.length > 0,
   )
-}
-
-// Footer link badges made from Pragma titles outlive their setting until /clear; the engine
-// flattens them into the hint text, so the row leaves those parts out.
-function hintWithoutPragmaBadges(hint: string, objects: readonly PragmaObject[]): string {
-  const isPragmaTitle = (part: string): boolean => {
-    const text = part.replace(/…$/, '')
-    return text.length >= 4 && objects.some(object => object.title.startsWith(text))
-  }
-  return hint
-    .split(' · ')
-    .map(part => part.trim())
-    .filter(part => part !== '' && !isPragmaTitle(part))
-    .join(' · ')
-    .replace(/\s*·\s*$/, '')
 }
 
 // A task's row joins the hover group of the need it answers; the need's title lights while any
@@ -409,19 +371,22 @@ export const register: Register = on => {
   // hook per event is the engine's rule, and the tracking owns them; the menu's parts ride there.
   registerTracking(on)
 
-  on('ui.render', { component: 'SessionMode' }, (_, e, next) => {
-    modeLabels = e.props.modes
-    return next(e)
+  // The hint row under the prompt is the engine's own: a tree of the plugin's would draw its
+  // pills (`1 shell`, `2 agents`) as flat text, and a pill the person selects with ↓ would not
+  // light. The pinned task's unlogged minutes ride the line's `tail`, dim at its end.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const label = taskLabel(await readSession($))
+    return next(label === '' ? e : { ...e, props: { ...e.props, tail: `${GLYPH} ${label}` } })
   })
 
-  // The dim hint row under the prompt: the Pragma button first, the engine's text after it.
-  // While the menu is open, the rows under the button list the session's Pragma objects by
-  // kind, the way a dropdown hangs under its control; an entry opens its page and the menu
-  // stays open until the button is pressed again.
+  // The band above the prompt: the Pragma button. While the menu is open, the rows under the
+  // button list the session's Pragma objects by kind, the way a dropdown hangs under its
+  // control; an entry opens its page and the menu stays open until the button is pressed again.
   // In a registered directory the button is there from the session start, so a person who just
   // ran the setup finds it; it stays uncolored until the session touches a Pragma item. Outside
-  // one the hooks are inert and the row is the engine's own.
-  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+  // one the hooks are inert and the band is the engine's own; a survey has it whenever it asks.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
     const session = await readSession($)
     const hiddenIds = await read($, hidden)
     const objects = session.objects.filter(object => !hiddenIds.includes(object.id))
@@ -431,20 +396,13 @@ export const register: Register = on => {
     const { Box, Button, Link, Text } = $.ui.resolve(e)
     const isOpen = await read($, menuOpen)
     const toggle = (): void => void update($, menuOpen, open => !open)
-    const hint = hintWithoutPragmaBadges(e.props.hint, objects)
 
-    // The engine's own hint keeps its place; the button follows it. The menu rows below start
-    // at the tree's left edge whatever the button's place in the row.
-    // The engine's mode pill sits before this tree; the menu rows are pulled back under it by
-    // its width, the first row padded by as much so it keeps its place after the pill.
-    const pill = hint.includes('shift+tab') ? (PILL_WIDTH[session.permissionMode ?? ''] ?? 0) : 0
     const row = (
-      <Box flexDirection="row" paddingLeft={isOpen ? pill : 0}>
-        <Text dimColor>{hint === '' ? '' : `${hint} · `}</Text>
+      <Box flexDirection="row">
         <Button key="pragma" plain onPress={toggle}>
           <Text {...(isActive ? { color: BRAND } : { dimColor: true })}>{GLYPH} Pragma {isOpen ? '▴' : '▾'}</Text>
         </Button>
-        <Text dimColor>{separated(isOpen ? timeLabel(session) : taskLabel(session))}</Text>
+        <Text dimColor>{separated(isOpen ? timeLabel(session) : '')}</Text>
       </Box>
     )
     if (!isOpen) return row
@@ -607,7 +565,7 @@ export const register: Register = on => {
         </Box>,
       )
     }
-    // The hint area under the prompt does not scroll: past MENU_ROWS objects the menu pages.
+    // Past MENU_ROWS objects the menu pages, so the band stays short.
     if (notShown > 0 || limit > MENU_ROWS) {
       rows.push(
         <Box key="paging" flexDirection="row" paddingLeft={2}>
@@ -629,9 +587,9 @@ export const register: Register = on => {
       )
     }
 
-    // One blank row between the hint row and the menu.
+    // One blank row between the button row and the menu.
     return (
-      <Box flexDirection="column" marginLeft={-pill}>
+      <Box flexDirection="column">
         {row}
         <Box flexDirection="column" marginTop={1}>
           {rows}

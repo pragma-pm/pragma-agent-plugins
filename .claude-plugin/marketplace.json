@@ -6,7 +6,7 @@
     {
       "name": "pragma",
       "source": "./",
-      "description": "Time tracking for Claude Code: pin a Pragma task before work, log its time, close it; a Pragma menu under the prompt."
+      "description": "Time tracking for Claude Code: pin a Pragma task before work, log its time, close it; a Pragma menu above the prompt."
     }
   ]
 }

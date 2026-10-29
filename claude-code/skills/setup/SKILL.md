@@ -59,7 +59,7 @@ The registration is per person and per directory, kept in `~/.claude/pragma/dire
 
 ## 4. Permission rules
 
-The agent calls these Pragma tools on the user's behalf many times a session; the menu under the prompt calls some of them on a press. Without a rule each call is a prompt, or a refusal from the auto-mode classifier. Offer (AskUserQuestion: add to user settings / add to this project's settings / skip) to add them to `permissions.allow`:
+The agent calls these Pragma tools on the user's behalf many times a session; the menu above the prompt calls some of them on a press. Without a rule each call is a prompt, or a refusal from the auto-mode classifier. Offer (AskUserQuestion: add to user settings / add to this project's settings / skip) to add them to `permissions.allow`:
 
 ```
 mcp__pragma__search
@@ -92,5 +92,5 @@ Store it in `identity.json` as `"preferences": { "taskForShortWork": false | tru
 ## 6. Finish
 
 - Tell the user to run `/clear` or start a new session: the protocol the hooks inject arrives at session start. From then on, in this directory and under it, the agent pins a task before any change and logs its time.
-- Point at the `◷ Pragma` button under the prompt: the session's objects, their logged minutes, adjust and delete.
+- Point at the `◷ Pragma` button above the prompt: the session's objects, their logged minutes, adjust and delete.
 - Suggest a first test: ask for a small change to a file of the directory — a note, a document, a line of code, whatever the work is — and watch the pin and the log happen.
