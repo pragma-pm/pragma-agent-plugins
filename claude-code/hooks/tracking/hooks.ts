@@ -285,18 +285,28 @@ async function gate($: EngineInterface, state: TrackingState, tool: string, fiel
 /**
  * A need found by `search` and `get_manageable` names its project by id alone: one
  * `list_projects` names every project the session met without a name, so the menu and the pin
- * line show names, not ids. Each project is asked once, whatever the answer: a refused call
- * does not come back at every Pragma call. The call is raised from the `tool.call` hook, which
- * the engine skips for it: its answer is read here, not by `track`.
+ * line show names, not ids. It runs after each Pragma call and at each prompt: a session
+ * resumed from before the hooks asked is named at its next prompt.
+ *
+ * A project is asked once when Pragma answers or the call is refused: a refusal does not come
+ * back at every call. A call that failed (the server not connected yet) is asked again at the
+ * next occasion. The state is saved before the call, since the call runs the `tool.call` hook
+ * (skipped when that hook raised it), and read back after it: the state to carry on with.
  */
-async function nameProjects($: EngineInterface, state: TrackingState): Promise<void> {
+async function nameProjects($: EngineInterface, state: TrackingState): Promise<TrackingState> {
   const unnamed = unnamedProjects(state, mapping)
-  if (unnamed.length === 0) return
+  if (unnamed.length === 0) return state
   state.projectsAsked = [...(state.projectsAsked ?? []), ...unnamed]
+  await saveState($, state)
   const organization = state.organizationId === null ? {} : { organizationId: state.organizationId }
   const answer = await $.tool.call({ tool: `${TOOL_PREFIX}list_projects`, ...organization }).catch(() => null)
-  if (answer === null || answer.deny !== undefined || answer.isError === true) return
-  rememberProject(state, parseAnswer(answer.text))
+  const current = (await loadState($)) ?? state
+  if (answer === null || answer.isError === true) {
+    current.projectsAsked = (current.projectsAsked ?? []).filter(id => !unnamed.includes(id))
+  } else if (answer.deny === undefined) {
+    rememberProject(current, parseAnswer(answer.text))
+  }
+  return current
 }
 
 // ---------------------------------------------------------------- the hooks
@@ -343,8 +353,9 @@ export function registerTracking(on: On): void {
     const now = await nowSeconds($)
     addMoment(state, { at: now, byPerson: true })
     state.workGateOpen = false // an override of the work gate holds for one turn
-    await saveState($, state)
-    return next({ ...e, context: [...(e.context ?? []), promptLine(state, now)] })
+    const named = await nameProjects($, state)
+    await saveState($, named)
+    return next({ ...e, context: [...(e.context ?? []), promptLine(named, now)] })
   })
 
   // The gates before a call; after it, the call is the agent's moment in the turn (an answered
@@ -359,7 +370,7 @@ export function registerTracking(on: On): void {
       if (denial !== null) return { deny: denial }
     }
     const result = await next(e)
-    const settled = await loadState($)
+    let settled = await loadState($)
     if (settled === null) return result
     const after = await nowSeconds($)
     const answered = result.deny === undefined && result.isError !== true
@@ -368,7 +379,7 @@ export function registerTracking(on: On): void {
     if (answered && e.tool.startsWith(TOOL_PREFIX)) {
       context = track(settled, mapping, e.tool, fields, parseAnswer(result.text), after)
       await settleQueuedAction($, e.tool, fields)
-      await nameProjects($, settled)
+      settled = await nameProjects($, settled)
     }
     await saveState($, settled)
     if (context === null || result.deny !== undefined) return result

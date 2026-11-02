@@ -52,6 +52,8 @@ function pragmaAnswer(tool: string, fields: Record<string, unknown>): unknown {
  */
 type Pragma = {
   projects?: { id: string; title: string }[]
+  /** How the first `list_projects` calls go wrong, one per call; the later ones answer. */
+  outages?: ('error' | 'deny')[]
   sheets?: Record<string, string>
   items?: Record<string, unknown>
   calls?: string[]
@@ -79,9 +81,15 @@ function engine(on: On, pragma: Pragma = {}): void {
   })
   on('fs.stat', (_, e) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('prompt.submit', (_, e) => ({ text: e.text, context: e.context }))
   on('tool.call', (_, e) => {
     const fields: Record<string, unknown> = e
     pragma.calls?.push(e.tool)
+    if (e.tool === 'mcp__pragma__list_projects') {
+      const outage = pragma.outages?.shift()
+      if (outage === 'deny') return { deny: 'refused by the permission rules' }
+      if (outage === 'error') return { result: null, text: 'the server is not connected', isError: true }
+    }
     const id = fields['id']
     const answer =
       e.tool === 'mcp__pragma__list_projects' ? (pragma.projects ?? [])
@@ -206,4 +214,35 @@ test('a project Pragma does not list is asked once, then named by the agent\'s g
   await $.tool.call({ tool: 'mcp__pragma__get_project', id: 'project__x' })
   const pinned = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
   expect(pinned.context?.join('\n')).toContain('(Client Portal)')
+})
+
+/** The person sends a prompt from the composer. */
+async function typePrompt($: Engine, text: string): Promise<void> {
+  await $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
+}
+
+test('a lookup that failed is asked again at the next call or prompt, which names the project', async ($, on) => {
+  const calls: string[] = []
+  const lookups = (): number => calls.filter(tool => tool === 'mcp__pragma__list_projects').length
+  // the server fails the lookup after each of findNeed's calls from the first get_manageable on: four
+  const outages: ('error' | 'deny')[] = ['error', 'error', 'error', 'error']
+  engine(on, { projects: [{ id: 'project__x', title: 'Client Portal' }], outages, items: existingItems('project__x'), calls })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await findNeed($)
+  expect(lookups()).toBe(4)
+
+  await typePrompt($, 'go on')
+  expect(lookups()).toBe(5)
+  const pinned = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  expect(pinned.context?.join('\n')).toContain('(Client Portal)')
+  expect(lookups()).toBe(5)
+})
+
+test('a refused lookup is not asked again, neither at the next call nor at the next prompt', async ($, on) => {
+  const calls: string[] = []
+  engine(on, { projects: [{ id: 'project__x', title: 'Client Portal' }], outages: ['deny'], items: existingItems('project__x'), calls })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await findNeed($)
+  await typePrompt($, 'go on')
+  expect(calls.filter(tool => tool === 'mcp__pragma__list_projects')).toHaveLength(1)
 })
