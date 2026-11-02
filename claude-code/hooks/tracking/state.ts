@@ -21,6 +21,7 @@ export function initialState(sessionId: string, mapping: Mapping, actorId: strin
     types: {},
     projects: {},
     projectOf: {},
+    projectsAsked: [],
     needOf: {},
     lastNeedSeen: null,
     stateCategories: {},
@@ -166,11 +167,20 @@ export function latestEntryOf(state: TrackingState, activityId: string | null): 
   return activityId === null ? undefined : [...state.timeEntries].reverse().find(entry => entry.activityId === activityId)
 }
 
+/** A project's name, from a Pragma answer the session read, else from the directory's default projects; null while unknown. */
+export function knownProjectTitle(state: TrackingState, mapping: Mapping | null, projectId: string): string | null {
+  return state.projects[projectId] ?? Object.values(mapping?.defaultProjects ?? {}).find(project => project.id === projectId)?.title ?? null
+}
+
+/** The projects of the session's items whose names the session does not know, and has not asked Pragma for yet. */
+export function unnamedProjects(state: TrackingState, mapping: Mapping | null): string[] {
+  const asked = new Set(state.projectsAsked ?? [])
+  return [...new Set(Object.values(state.projectOf))].filter(id => !asked.has(id) && knownProjectTitle(state, mapping, id) === null)
+}
+
 export function projectTitle(state: TrackingState, mapping: Mapping | null, manageableId: string): string {
   const projectId = state.projectOf[manageableId]
-  if (projectId === undefined) return ''
-  const fromDefaults = Object.values(mapping?.defaultProjects ?? {}).find(project => project.id === projectId)?.title
-  return state.projects[projectId] ?? fromDefaults ?? ''
+  return projectId === undefined ? '' : (knownProjectTitle(state, mapping, projectId) ?? '')
 }
 
 /** `task «T» under requirement «N» (Project)`, or one side of it; null while nothing is pinned. */

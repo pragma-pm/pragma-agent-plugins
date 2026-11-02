@@ -9,10 +9,10 @@ import type { EngineInterface, On, PromptComposeSection } from 'claude-code'
 import type { Identity, Mapping, TrackingState } from '../../types'
 import { pendingSections, settleQueuedAction } from '../menu/queued'
 import { WRITE_TOOLS, gateClose, gateLog, gateWork } from './gates'
-import { addMoment, describePin, initialState, isRecord, isTrackingState, loggedMinutes, needFigure, taskFigure, titleOf } from './state'
+import { addMoment, describePin, initialState, isRecord, isTrackingState, loggedMinutes, needFigure, taskFigure, titleOf, unnamedProjects } from './state'
 import { ambiguitySentence, fillProtocol } from './texts'
 import { hhmm, hm, isoDay } from './time'
-import { TOOL_PREFIX, parseAnswer, track } from './track'
+import { TOOL_PREFIX, parseAnswer, rememberProject, track } from './track'
 
 const INTERIM_NUDGE_MINUTES = 30
 const LEDGER_THRESHOLD_MINUTES = 5
@@ -282,6 +282,23 @@ async function gate($: EngineInterface, state: TrackingState, tool: string, fiel
   return null
 }
 
+/**
+ * A need found by `search` and `get_manageable` names its project by id alone: one
+ * `list_projects` names every project the session met without a name, so the menu and the pin
+ * line show names, not ids. Each project is asked once, whatever the answer: a refused call
+ * does not come back at every Pragma call. The call is raised from the `tool.call` hook, which
+ * the engine skips for it: its answer is read here, not by `track`.
+ */
+async function nameProjects($: EngineInterface, state: TrackingState): Promise<void> {
+  const unnamed = unnamedProjects(state, mapping)
+  if (unnamed.length === 0) return
+  state.projectsAsked = [...(state.projectsAsked ?? []), ...unnamed]
+  const organization = state.organizationId === null ? {} : { organizationId: state.organizationId }
+  const answer = await $.tool.call({ tool: `${TOOL_PREFIX}list_projects`, ...organization }).catch(() => null)
+  if (answer === null || answer.deny !== undefined || answer.isError === true) return
+  rememberProject(state, parseAnswer(answer.text))
+}
+
 // ---------------------------------------------------------------- the hooks
 
 // One hook per event without a matcher is the engine's rule: the menu's parts (its queued
@@ -351,6 +368,7 @@ export function registerTracking(on: On): void {
     if (answered && e.tool.startsWith(TOOL_PREFIX)) {
       context = track(settled, mapping, e.tool, fields, parseAnswer(result.text), after)
       await settleQueuedAction($, e.tool, fields)
+      await nameProjects($, settled)
     }
     await saveState($, settled)
     if (context === null || result.deny !== undefined) return result

@@ -87,6 +87,11 @@ export type TrackingState = {
   projects: Record<string, string>
   /** The project an item belongs to. */
   projectOf: Record<string, string>
+  /**
+   * Projects whose names the hooks asked Pragma for: each is asked once, whatever the answer.
+   * Absent from a state stored before the hooks asked.
+   */
+  projectsAsked?: string[]
   /** The need a task answers, from the `has_response` links seen. */
   needOf: Record<string, string>
   lastNeedSeen: string | null

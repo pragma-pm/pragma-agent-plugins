@@ -43,14 +43,18 @@ export function parseAnswer(text: string | undefined): unknown {
   }
 }
 
-function rememberProject(state: TrackingState, data: unknown): void {
+/**
+ * The project names in a Pragma answer: `list_projects` answers rows of `{ id, title }`,
+ * `get_project` one `{ metadata: { id }, body: { title } }`. `askedId` is the id the call named.
+ */
+export function rememberProject(state: TrackingState, data: unknown, askedId: string | null = null): void {
   if (Array.isArray(data)) {
     for (const item of data) rememberProject(state, item)
     return
   }
   if (!isRecord(data)) return
-  const id = stringField(data, 'id')
-  const title = stringField(data, 'title')
+  const id = stringField(data, 'id') ?? stringField(recordField(data, 'metadata'), 'id') ?? askedId
+  const title = stringField(data, 'title') ?? stringField(recordField(data, 'body'), 'title')
   if (id !== null && id.startsWith('project__') && title !== null) state.projects[id] = title
 }
 
@@ -203,7 +207,7 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
   }
 
   if (name === 'list_projects' || name === 'get_project' || name === 'create_project') {
-    rememberProject(state, data)
+    rememberProject(state, data, stringField(fields, 'id'))
     return null
   }
 

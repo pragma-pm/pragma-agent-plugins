@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 // The hooks through the engine: nothing sits beneath the plugin but these hooks, which stand
@@ -44,7 +45,27 @@ function pragmaAnswer(tool: string, fields: Record<string, unknown>): unknown {
   }
 }
 
-function engine(on: On): void {
+/**
+ * What a test's Pragma holds beside `pragmaAnswer`: the organization's projects as `list_projects`
+ * answers them, the project titles `get_project` answers by id, the items `get_manageable`
+ * answers by id; and the calls it received, by tool.
+ */
+type Pragma = {
+  projects?: { id: string; title: string }[]
+  sheets?: Record<string, string>
+  items?: Record<string, unknown>
+  calls?: string[]
+}
+
+/** A need that already exists and its task, as `get_manageable` answers them: their project named by id alone. */
+function existingItems(projectId: string): Record<string, unknown> {
+  return {
+    [NEED]: { id: NEED, manageableType: 'issue', body: { title: 'Login fails' }, scope: { projectIds: [projectId] }, assignees: {} },
+    [TASK]: { id: TASK, manageableType: 'task', body: { title: 'Fix the token check' }, scope: { projectIds: [projectId] }, assignees: { actor__me: { isRequest: false } } },
+  }
+}
+
+function engine(on: On, pragma: Pragma = {}): void {
   mock.env(on, { HOME })
   mock.store(on)
   mock.clock(on)
@@ -60,9 +81,26 @@ function engine(on: On): void {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', (_, e) => {
     const fields: Record<string, unknown> = e
-    const answer = e.tool.startsWith('mcp__pragma__') ? pragmaAnswer(e.tool, fields) : {}
+    pragma.calls?.push(e.tool)
+    const id = fields['id']
+    const answer =
+      e.tool === 'mcp__pragma__list_projects' ? (pragma.projects ?? [])
+      : e.tool === 'mcp__pragma__get_manageable' && typeof id === 'string' ? (pragma.items?.[id] ?? {})
+      // get_project answers its id under `metadata` and its title under `body`
+      : e.tool === 'mcp__pragma__get_project' && typeof id === 'string' ? { metadata: { id }, body: { title: pragma.sheets?.[id] } }
+      : e.tool.startsWith('mcp__pragma__') ? pragmaAnswer(e.tool, fields)
+      : {}
     return { result: answer, text: JSON.stringify(answer) }
   })
+}
+
+/** The agent finds the existing need and its task, as the protocol has it, up to the pin. */
+async function findNeed($: Engine): Promise<void> {
+  await $.tool.call({ tool: 'mcp__pragma__search', organizationId: 'organization__o', query: 'login fails' })
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: NEED })
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: TASK })
+  await $.tool.call({ tool: 'mcp__pragma__create_link', from: NEED, to: TASK, type: 'has_response' })
+  await $.tool.call({ tool: 'mcp__pragma__available_transitions', id: TASK })
 }
 
 test('a change under the tracked directory is refused once while nothing is pinned; a file elsewhere never', async ($, on) => {
@@ -133,4 +171,39 @@ test('the protocol rides the system prompt, filled for the directory and the per
   expect(protocol?.text).toContain('organization «Org» (`organization__o`)')
   expect(protocol?.text).toContain('actor id is `actor__me`')
   expect(protocol?.text).toContain('«Improvements» (project__p)')
+})
+
+test('a need found by search is pinned with its project\'s name, asked of Pragma once', async ($, on) => {
+  const calls: string[] = []
+  engine(on, { projects: [{ id: 'project__x', title: 'Client Portal' }], items: existingItems('project__x'), calls })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await findNeed($)
+
+  const pinned = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  expect(pinned.context?.join('\n')).toContain('Pinned task «Fix the token check» under issue «Login fails» (Client Portal)')
+  expect(pinned.context?.join('\n')).toContain('([Client Portal](https://app.pragma.pm/projects/project__x))')
+  expect(calls.filter(tool => tool === 'mcp__pragma__list_projects')).toHaveLength(1)
+})
+
+test('a default project is named from the registration, without asking Pragma', async ($, on) => {
+  const calls: string[] = []
+  engine(on, { items: existingItems('project__p'), calls })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await findNeed($)
+
+  const pinned = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  expect(pinned.context?.join('\n')).toContain('(Improvements)')
+  expect(calls).not.toContain('mcp__pragma__list_projects')
+})
+
+test('a project Pragma does not list is asked once, then named by the agent\'s get_project', async ($, on) => {
+  const calls: string[] = []
+  engine(on, { projects: [], sheets: { project__x: 'Client Portal' }, items: existingItems('project__x'), calls })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await findNeed($)
+  expect(calls.filter(tool => tool === 'mcp__pragma__list_projects')).toHaveLength(1)
+
+  await $.tool.call({ tool: 'mcp__pragma__get_project', id: 'project__x' })
+  const pinned = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  expect(pinned.context?.join('\n')).toContain('(Client Portal)')
 })

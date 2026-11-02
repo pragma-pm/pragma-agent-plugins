@@ -59,10 +59,11 @@ The registration is per person and per directory, kept in `~/.claude/pragma/dire
 
 ## 4. Permission rules
 
-The agent calls these Pragma tools on the user's behalf many times a session; the menu above the prompt calls some of them on a press. Without a rule each call is a prompt, or a refusal from the auto-mode classifier. Offer (AskUserQuestion: add to user settings / add to this project's settings / skip) to add them to `permissions.allow`:
+The agent calls these Pragma tools on the user's behalf many times a session; the menu above the prompt calls some of them on a press, and the hooks call `list_projects` to name the projects the session meets. Without a rule each call is a prompt, or a refusal from the auto-mode classifier. Offer (AskUserQuestion: add to user settings / add to this project's settings / skip) to add them to `permissions.allow`:
 
 ```
 mcp__pragma__search
+mcp__pragma__list_projects
 mcp__pragma__list_domains
 mcp__pragma__available_transitions
 mcp__pragma__create_manageable
@@ -78,7 +79,7 @@ mcp__pragma__delete_manageable
 User settings are `~/.claude/settings.json`, project settings `.claude/settings.local.json`. Read the file, merge into the existing array, write it back. If the edit is refused (the auto-mode classifier treats a settings edit as self-modification), hand the user this line to run as is, with the file they chose:
 
 ```
-! jq '.permissions.allow += ["mcp__pragma__search","mcp__pragma__list_domains","mcp__pragma__available_transitions","mcp__pragma__create_manageable","mcp__pragma__create_link","mcp__pragma__assign_activity","mcp__pragma__add_time_entry","mcp__pragma__update_time_entry","mcp__pragma__delete_time_entry","mcp__pragma__archive_manageable","mcp__pragma__delete_manageable"]' ~/.claude/settings.json > ~/.claude/settings.json.new && mv ~/.claude/settings.json.new ~/.claude/settings.json
+! jq '.permissions.allow += ["mcp__pragma__search","mcp__pragma__list_projects","mcp__pragma__list_domains","mcp__pragma__available_transitions","mcp__pragma__create_manageable","mcp__pragma__create_link","mcp__pragma__assign_activity","mcp__pragma__add_time_entry","mcp__pragma__update_time_entry","mcp__pragma__delete_time_entry","mcp__pragma__archive_manageable","mcp__pragma__delete_manageable"]' ~/.claude/settings.json > ~/.claude/settings.json.new && mv ~/.claude/settings.json.new ~/.claude/settings.json
 ```
 
 ## 5. Preferences

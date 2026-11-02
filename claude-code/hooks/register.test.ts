@@ -9,6 +9,7 @@ const HOME = '/home/me'
 const DIRECTORY = '/home/me/clients/acme'
 const ELSEWHERE = '/home/me/personal'
 const TASK = 'manageable_task__t1'
+const NEED = 'manageable_issue__n1'
 const BRAND = '#875ec6'
 const HINT = { isDraft: false, isWorking: false, hint: '? for shortcuts' }
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120, scroll: { offset: 0, bodyRows: 19 }, view: {} }
@@ -27,6 +28,11 @@ function pragmaAnswer(tool: string, fields: Record<string, unknown>): unknown {
       return { currentStateId: 'ws_todo', currentCategory: 'todo', transitions: [{ toStateId: 'ws_prog', toCategory: 'in_progress', allowed: true }] }
     case 'mcp__pragma__transition_manageable':
       return { id: fields['id'], newStateId: fields['toStateId'], transitioned: true }
+    // an existing need, its project named by id alone; list_projects names it
+    case 'mcp__pragma__get_manageable':
+      return { id: fields['id'], manageableType: 'issue', body: { title: 'Login fails' }, scope: { projectIds: ['project__x'] }, assignees: {} }
+    case 'mcp__pragma__list_projects':
+      return [{ id: 'project__x', title: 'Client Portal' }]
     default:
       return { id: TASK, type: 'task', title: 'Fix the token check', created: true }
   }
@@ -85,6 +91,17 @@ test('in a registered directory the button is there from the session start, unco
   const touched = await $.ui.mount({ plugin: 'pragma', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect((await touched.find({ type: 'Text', text: /Pragma/ }))?.props['color']).toBe(BRAND)
   expect(await touched.find({ text: /No Pragma item in this session yet/ })).toBeUndefined()
+})
+
+test('the menu names the project of a need found by search, not by its id', async ($, on) => {
+  engine(on, DIRECTORY)
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: NEED })
+
+  const band = await $.ui.mount({ plugin: 'pragma', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  await band.press({ key: 'pragma' })
+  expect(await band.find({ text: /Client Portal/ })).toBeDefined()
+  expect(await band.find({ text: /project__x/ })).toBeUndefined()
 })
 
 test('the band yields to a survey', async ($, on) => {
