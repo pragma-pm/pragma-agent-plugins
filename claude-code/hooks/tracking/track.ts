@@ -4,7 +4,7 @@
 
 import type { Mapping, TrackingState } from '../../types'
 import {
-  ACTIVITY_TYPES, CLOSING_CATEGORIES, NEED_TYPES, countedFrom, countingStart, describePin, entryById, isRecord,
+  ACTIVITY_TYPES, CLOSING_CATEGORIES, NEED_TYPES, countedFrom, countingStart, describePin, entryById, isClosed, isRecord,
   latestEntryOf, manageableType, projectTitle, recordAssignment, recordOf, titleOf,
 } from './state'
 import { itemUrl, markdownLink, projectUrl } from './texts'
@@ -87,6 +87,7 @@ export function trackTransition(state: TrackingState, mapping: Mapping | null, m
     const record = recordOf(state, manageableId, now)
     record.pinnedAt = now
     record.countedFrom = start
+    record.status = 'open'
     const needId = state.needOf[manageableId] ?? state.lastNeedSeen
     if (needId !== null && needId !== undefined && state.need?.id !== needId) state.need = { id: needId, pinnedAt: now, countedFrom: start }
     const projectId = needId === null || needId === undefined ? undefined : state.projectOf[needId]
@@ -99,25 +100,33 @@ export function trackTransition(state: TrackingState, mapping: Mapping | null, m
     )
   }
   if (category !== undefined && CLOSING_CATEGORIES.has(category) && type !== null && ACTIVITY_TYPES.has(type)) {
-    recordOf(state, manageableId, now).closedAt = now
+    const record = recordOf(state, manageableId, now)
+    record.closedAt = now
+    record.status = 'closed'
     if (state.task?.id === manageableId) state.task = null
     return needFollowUp(state, manageableId)
   }
   if (category !== undefined && CLOSING_CATEGORIES.has(category) && type !== null && NEED_TYPES.has(type)) {
-    recordOf(state, manageableId, now).closedAt = now
+    const record = recordOf(state, manageableId, now)
+    record.closedAt = now
+    record.status = 'closed'
     if (state.need?.id === manageableId && state.task === null) state.need = null
+    return null
   }
+  // Any other move of an item the session has seen: a cancel closes it; back to todo, reopened, it is open.
+  const seen = state.tasks[manageableId]
+  if (category !== undefined && !CLOSING_CATEGORIES.has(category) && seen !== undefined) seen.status = category === 'cancelled' ? 'closed' : 'open'
   return null
 }
 
 /** A task closed: the need it answers may be complete. The agent offers, the user decides. */
 export function needFollowUp(state: TrackingState, taskId: string): string | null {
   const needId = state.needOf[taskId]
-  if (needId === undefined || state.tasks[needId]?.closedAt !== undefined) return null
+  if (needId === undefined || isClosed(state.tasks[needId])) return null
   const others = Object.entries(state.needOf)
     .filter(([other, need]) => need === needId && other !== taskId && state.tasks[other]?.archivedAt === undefined)
     .map(([other]) => other)
-  const stillOpen = others.filter(other => state.tasks[other]?.closedAt === undefined).map(other => titleOf(state, other))
+  const stillOpen = others.filter(other => !isClosed(state.tasks[other])).map(other => titleOf(state, other))
   const seen =
     stillOpen.length > 0
       ? `${stillOpen.length} other task${stillOpen.length > 1 ? 's' : ''} of it seen this session still open: ${stillOpen.map(title => `«${title}»`).join(', ')}`

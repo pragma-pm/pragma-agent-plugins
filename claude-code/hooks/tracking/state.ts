@@ -67,6 +67,14 @@ export function recordOf(state: TrackingState, id: string, now: number): TaskRec
   return record
 }
 
+/**
+ * An item is closed when Pragma last said so (a transition of the session's, `/pragma:refresh`),
+ * else, for a state stored before the status was kept, when the session closed it.
+ */
+export function isClosed(record: TaskRecord | undefined): boolean {
+  return record?.status === undefined ? record?.closedAt !== undefined : record.status === 'closed'
+}
+
 /** Where a pinned need or task starts counting; pins older than `countedFrom` start at the pin. */
 export function countedFrom(pin: Pin | TaskRecord | null | undefined): number | null {
   return pin?.countedFrom ?? pin?.pinnedAt ?? null

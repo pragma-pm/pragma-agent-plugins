@@ -17,6 +17,7 @@ What a tracked session looks like:
 - When the task is done, the agent logs the time you spent, as the hooks timed the session, and closes the task. A close without a time entry, or with unlogged minutes beyond a small slack, is refused once with the minutes computed.
 - A closed task may complete its requirement or issue: the agent then offers to move it, as a choice among its allowed transitions. You decide; the agent never closes a requirement or an issue on its own. Every such question is an interactive choice, never a line of text to answer.
 - A `◷ Pragma` button above the prompt opens a menu of the session's Pragma objects: the project, the requirements and issues, the tasks, with the minutes logged on each. It is there from the session start in a registered directory, uncolored until the session touches a Pragma item. An entry opens its page. A task's minutes can be adjusted, a task deleted with its minutes moved to the previous one. The pinned task's unlogged minutes show at the end of the hint row under the prompt.
+- The menu shows each item as the session last saw it. `/pragma:refresh` reads them again from Pragma: an item closed, reopened, renamed, archived or deleted elsewhere (the webapp, another session) shows as it is now. A pinned task closed or gone outside the session is unpinned, and its unlogged minutes go to the agent to log at its next turn.
 
 Every refusal is a warning, not a lock: the same call repeated goes through. The person is in charge, not the rule.
 
@@ -42,6 +43,7 @@ Requirements: Claude Code 2.1.311 or later.
 .claude-plugin/        plugin and marketplace manifests (the repository root is the plugin)
 claude-code/hooks/     register.tsx (the module: the menu), tracking/ (the time-tracking hooks, protocol.ts what the agent is told), menu/
 claude-code/skills/    /pragma:setup
+claude-code/commands/  /pragma:refresh, served by the hooks
 claude-code/types/     the plugin's state contract
 ```
 

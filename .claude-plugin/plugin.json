@@ -9,5 +9,6 @@
   "keywords": ["pragma", "time-tracking", "project-management", "traceability"],
   "hooks": "./claude-code/hooks/hooks.json",
   "skills": "./claude-code/skills",
+  "commands": "./claude-code/commands",
   "types": "./claude-code/types/index.d.ts"
 }

@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { Engine } from 'claude-code/testing'
+import type { Engine, MockClock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 // The hooks through the engine: nothing sits beneath the plugin but these hooks, which stand
@@ -56,7 +56,13 @@ type Pragma = {
   outages?: ('error' | 'deny')[]
   sheets?: Record<string, string>
   items?: Record<string, unknown>
+  /** The workflows `get_workflow` answers by id. */
+  workflows?: Record<string, unknown>
   calls?: string[]
+  /** The clock's start, in milliseconds. */
+  now?: number
+  /** The session's working directory; the registered one by default. */
+  cwd?: string
 }
 
 /** A need that already exists and its task, as `get_manageable` answers them: their project named by id alone. */
@@ -67,12 +73,12 @@ function existingItems(projectId: string): Record<string, unknown> {
   }
 }
 
-function engine(on: On, pragma: Pragma = {}): void {
+function engine(on: On, pragma: Pragma = {}): MockClock {
   mock.env(on, { HOME })
   mock.store(on)
-  mock.clock(on)
+  const clock = mock.clock(on, pragma.now === undefined ? undefined : { now: pragma.now })
   on('session.id', () => ({ value: 'session-1' }))
-  on('session.cwd', () => ({ value: DIRECTORY }))
+  on('session.cwd', () => ({ value: pragma.cwd ?? DIRECTORY }))
   on('session.repo', () => ({ value: null }))
   on('fs.read', (_, e) => {
     const text = FILES[e.path]
@@ -91,15 +97,22 @@ function engine(on: On, pragma: Pragma = {}): void {
       if (outage === 'error') return { result: null, text: 'the server is not connected', isError: true }
     }
     const id = fields['id']
+    // an item Pragma does not hold, once the test says what it holds: deleted
+    if (e.tool === 'mcp__pragma__get_manageable' && typeof id === 'string' && pragma.items !== undefined && pragma.items[id] === undefined) {
+      return { result: null, text: 'Item not found or access denied.', isError: true }
+    }
     const answer =
       e.tool === 'mcp__pragma__list_projects' ? (pragma.projects ?? [])
       : e.tool === 'mcp__pragma__get_manageable' && typeof id === 'string' ? (pragma.items?.[id] ?? {})
       // get_project answers its id under `metadata` and its title under `body`
       : e.tool === 'mcp__pragma__get_project' && typeof id === 'string' ? { metadata: { id }, body: { title: pragma.sheets?.[id] } }
+      : e.tool === 'mcp__pragma__get_workflow' && typeof id === 'string' ? (pragma.workflows?.[id] ?? {})
       : e.tool.startsWith('mcp__pragma__') ? pragmaAnswer(e.tool, fields)
       : {}
     return { result: answer, text: JSON.stringify(answer) }
   })
+  on('ui.toast', () => ({ value: undefined }))
+  return clock
 }
 
 /** The agent finds the existing need and its task, as the protocol has it, up to the pin. */
@@ -245,4 +258,88 @@ test('a refused lookup is not asked again, neither at the next call nor at the n
   await findNeed($)
   await typePrompt($, 'go on')
   expect(calls.filter(tool => tool === 'mcp__pragma__list_projects')).toHaveLength(1)
+})
+
+// ---------------------------------------------------------------- /pragma:refresh
+
+const OTHER_TASK = 'manageable_task__t2'
+
+/** The person types `/pragma:refresh`. */
+function runRefresh($: Engine): ReturnType<Engine['command']['run']> {
+  return $.command.run({ command: 'pragma:refresh', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } })
+}
+
+/** The issue workflow the session has not seen: its state's category is read from it. */
+const ISSUE_WORKFLOW = { id: 'wf_issue', states: [{ id: 'ws_issue_open', category: 'in_progress', manageableStatus: 'active' }] }
+
+test('a refresh reads the menu\'s items again: a task closed elsewhere, a need renamed, an item deleted', async ($, on) => {
+  const calls: string[] = []
+  const items = existingItems('project__p')
+  items[OTHER_TASK] = { id: OTHER_TASK, manageableType: 'task', body: { title: 'Write the release note' }, scope: { projectIds: ['project__p'] }, assignees: {} }
+  engine(on, { items, workflows: { wf_issue: ISSUE_WORKFLOW }, calls })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await findNeed($)
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: OTHER_TASK })
+
+  // meanwhile, in the webapp
+  items[TASK] = { ...(items[TASK] as object), status: 'inactive', workflowStateId: 'ws_done', workflowId: 'wf_task' }
+  items[NEED] = { ...(items[NEED] as object), body: { title: 'Login fails on Safari' }, status: 'active', workflowStateId: 'ws_issue_open', workflowId: 'wf_issue' }
+  delete items[OTHER_TASK]
+
+  const refreshed = await runRefresh($)
+  expect(refreshed.text).toContain('Pragma menu refreshed: 3 items read again from Pragma.')
+  expect(refreshed.text).toContain('«Fix the token check»: closed in Pragma')
+  expect(refreshed.text).toContain('«Login fails» renamed «Login fails on Safari»')
+  expect(refreshed.text).toContain('«Write the release note»: deleted in Pragma, left out of the menu')
+  // the issue's state was unknown: its workflow told its category, open
+  expect(calls).toContain('mcp__pragma__get_workflow')
+  expect(refreshed.text).not.toContain('«Login fails on Safari»: closed')
+  expect(refreshed.context).toBeUndefined()
+
+  // read again with nothing changed
+  const again = await runRefresh($)
+  expect(again.text).toBe('Pragma menu refreshed: 2 items read again from Pragma. Nothing changed.')
+})
+
+test('a task closed in the session and reopened elsewhere reads open again', async ($, on) => {
+  const items = existingItems('project__p')
+  engine(on, { items })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await findNeed($)
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  await $.tool.call({ tool: 'mcp__pragma__add_time_entry', activityId: TASK, duration: 5, remaining: 0 })
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_done' })
+
+  items[TASK] = { ...(items[TASK] as object), status: 'active', workflowStateId: 'ws_todo', workflowId: 'wf_task' }
+  items[NEED] = { ...(items[NEED] as object), status: 'active', workflowStateId: 'ws_todo', workflowId: 'wf_issue' }
+  const refreshed = await runRefresh($)
+  expect(refreshed.text).toContain('«Fix the token check»: reopened in Pragma')
+  expect(refreshed.text).not.toContain('«Login fails»')
+})
+
+test('a refresh unpins a task closed elsewhere and hands its unlogged minutes to the agent', async ($, on) => {
+  const items = existingItems('project__p')
+  const clock = engine(on, { items, now: Date.UTC(2026, 10, 3, 9) })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await typePrompt($, 'fix the login')
+  await findNeed($)
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  await clock.advance(10 * 60_000)
+  await $.tool.call({ tool: 'Edit', file_path: `${DIRECTORY}/src/a.ts`, old_string: 'a', new_string: 'b' })
+
+  items[TASK] = { ...(items[TASK] as object), status: 'inactive', workflowStateId: 'ws_done', workflowId: 'wf_task' }
+  const refreshed = await runRefresh($)
+  expect(refreshed.text).toContain('«Fix the token check» was the pinned task: no longer pinned; its 10m unlogged go to the agent')
+  expect(refreshed.context?.join('\n')).toContain('add_time_entry({ activityId: "manageable_task__t1", duration: 10, remaining: 0')
+
+  // nothing pinned: a change is refused again
+  const edit = await $.tool.call({ tool: 'Edit', file_path: `${DIRECTORY}/src/b.ts`, old_string: 'a', new_string: 'b' })
+  expect(edit.deny).toContain('no task pinned')
+})
+
+test('outside a registered directory the refresh says so', async ($, on) => {
+  engine(on, { cwd: `${HOME}/personal` })
+  await $.session.start({ cwd: `${HOME}/personal`, surface: 'terminal', isInteractive: true })
+  const refreshed = await runRefresh($)
+  expect(refreshed.text).toContain('this directory is not tracked')
 })

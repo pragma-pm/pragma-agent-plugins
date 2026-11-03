@@ -10,7 +10,7 @@ export type PragmaObject = {
   url: string
   /** The pinned need or task of the session. */
   isPinned: boolean
-  /** A task the session closed. */
+  /** Closed in Pragma, as the session last knew it: by its own close, or read by `/pragma:refresh`. */
   isClosed: boolean
   /** When the session pinned it, for a task; null otherwise. */
   pinnedAt: number | null
@@ -46,7 +46,20 @@ export type Pin = { id: string; pinnedAt: number; countedFrom: number }
 export type TimeEntry = { id: string | null; activityId: string; duration: number; at: number; note: string | null }
 
 /** What the session knows of an item it touched. Epoch seconds. */
-export type TaskRecord = { seenAt?: number; pinnedAt?: number; countedFrom?: number; closedAt?: number; archivedAt?: number }
+export type TaskRecord = {
+  seenAt?: number
+  pinnedAt?: number
+  countedFrom?: number
+  /** When the session closed it: a moment a pin counts from. A close elsewhere sets `status` alone. */
+  closedAt?: number
+  archivedAt?: number
+  /**
+   * Its state as Pragma last answered it, to the session's own transitions and to
+   * `/pragma:refresh`: closed (in review, done, cancelled) or open. Absent from a state stored
+   * before it was kept, and for an item neither has seen: `closedAt` says then.
+   */
+  status?: 'open' | 'closed'
+}
 
 /**
  * A tracked directory's registration in `~/.claude/pragma/directories.json`: its organization and

@@ -4,7 +4,7 @@ import type { BoxHoverProps, EngineInterface, Register, TextHoverProps, ToolCall
 import type { Editing, ObjectKind, Pending, PragmaObject, SessionEntry, TrackingState } from '../types'
 import { withoutKey } from './menu/queued'
 import { currentMapping, registerTracking } from './tracking/hooks'
-import { knownProjectTitle, taskFigure } from './tracking/state'
+import { isClosed, knownProjectTitle, taskFigure } from './tracking/state'
 import { APP_URL } from './tracking/texts'
 
 // The plugin's time-tracking hooks (`tracking/`, beside this file) keep the session's Pragma
@@ -116,7 +116,7 @@ function workDaysLabel(entries: readonly SessionEntry[], nowSeconds: number): st
 
 function collectObjects(state: TrackingState): PragmaObject[] {
   const pinnedIds = new Set([state.need?.id, state.task?.id].filter((id): id is string => typeof id === 'string'))
-  const closedIds = new Set(Object.entries(state.tasks).filter(([, task]) => task.closedAt !== undefined).map(([id]) => id))
+  const closedIds = new Set(Object.entries(state.tasks).filter(([, task]) => isClosed(task)).map(([id]) => id))
   const entries = entriesByObject(state)
   const titles: Record<string, string> = { ...state.titles }
   const mapping = currentMapping()

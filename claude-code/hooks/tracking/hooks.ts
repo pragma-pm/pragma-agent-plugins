@@ -4,11 +4,12 @@
 // mirrored into `$.store`, so a restarted or resumed session finds it again.
 
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, On, PromptComposeSection } from 'claude-code'
+import type { CommandRunResult, EngineInterface, On, PromptComposeSection } from 'claude-code'
 
 import type { Identity, Mapping, TrackingState } from '../../types'
 import { pendingSections, settleQueuedAction } from '../menu/queued'
 import { WRITE_TOOLS, gateClose, gateLog, gateWork } from './gates'
+import { REFRESH_COMMAND, applyReadings, readingOf, refreshableIds, unknownWorkflows, type CallOutcome, type ItemReading } from './refresh'
 import { addMoment, describePin, initialState, isRecord, isTrackingState, loggedMinutes, needFigure, taskFigure, titleOf, unnamedProjects } from './state'
 import { ambiguitySentence, fillProtocol } from './texts'
 import { hhmm, hm, isoDay } from './time'
@@ -309,6 +310,51 @@ async function nameProjects($: EngineInterface, state: TrackingState): Promise<T
   return current
 }
 
+// ---------------------------------------------------------------- /pragma:refresh
+
+/**
+ * `/pragma:refresh`: each item of the menu read again with `get_manageable`, the categories of
+ * states the session does not know read from their workflows, then the session's state brought
+ * to what Pragma answered. The command tracks its own answers: a call it makes does not reach
+ * this plugin's `tool.call` hook everywhere, and tracking one twice changes nothing. One call at
+ * a time, the state saved once at the end.
+ */
+async function refreshItems($: EngineInterface): Promise<CommandRunResult> {
+  await refreshRegistration($)
+  const state = await loadState($)
+  if (state === null) return { text: 'Pragma: this directory is not tracked. /pragma:setup registers it.' }
+  const ids = refreshableIds(state)
+  if (ids.length === 0) return { text: 'Pragma: no item in the menu yet, nothing to refresh.' }
+  // The person's command is their moment, as a prompt is: the calls below are not the agent's turn.
+  addMoment(state, { at: await nowSeconds($), byPerson: true })
+  const titlesBefore = { ...state.titles }
+  const lastNeedSeen = state.lastNeedSeen
+  const consent = `The user ran /${REFRESH_COMMAND} to read the items of the Pragma menu again`
+  void $.ui.toast(`Pragma: reading ${ids.length} item${ids.length === 1 ? '' : 's'} again…`)
+
+  const ask = async (name: 'get_manageable' | 'get_workflow', id: string): Promise<CallOutcome> => {
+    const tool = `${TOOL_PREFIX}${name}` as const
+    const outcome: CallOutcome = await $.tool.call({ tool, id, consent }).catch(
+      (error: unknown): CallOutcome => ({ isError: true, text: error instanceof Error ? error.message : String(error) }),
+    )
+    if (outcome.deny === undefined && outcome.isError !== true) track(state, mapping, tool, { id }, parseAnswer(outcome.text), await nowSeconds($))
+    return outcome
+  }
+  const readings: ItemReading[] = []
+  for (const id of ids) {
+    const outcome = await ask('get_manageable', id)
+    if (outcome.deny !== undefined) return { text: `Pragma: the refresh was refused: ${outcome.deny}` }
+    readings.push(readingOf(id, outcome))
+  }
+  for (const workflowId of unknownWorkflows(state, readings)) await ask('get_workflow', workflowId)
+
+  // Reading needs again is no sign of the one the next task answers.
+  state.lastNeedSeen = lastNeedSeen
+  const { text, context } = applyReadings(state, readings, titlesBefore, await nowSeconds($))
+  await saveState($, state)
+  return context === null ? { text } : { text, context: [context] }
+}
+
 // ---------------------------------------------------------------- the hooks
 
 // One hook per event without a matcher is the engine's rule: the menu's parts (its queued
@@ -328,6 +374,9 @@ export function registerTracking(on: On): void {
     $.clock.every(60_000, () => $.ui.invalidate('ui.render'))
     return next(e)
   })
+
+  // The manifest declares `/pragma:refresh`; answered here without `next`, its markdown never reaches the model.
+  on('command.run', { command: REFRESH_COMMAND }, $ => refreshItems($))
 
   // The protocol rides the system prompt: every request, compaction included.
   on('prompt.compose', async ($, e, next) => {
