@@ -2,7 +2,7 @@
 // task has unlogged, what the need has been worked on.
 
 import type { Mapping, Pin, Span, TaskRecord, TimeEntry, TrackingState } from '../../types'
-import { spanMinutes, spansOf, working, type Moment } from './time'
+import { spanMinutes, spansOf, withMoment, working, type Moment } from './time'
 
 export const ACTIVITY_TYPES: ReadonlySet<string> = new Set(['task', 'meeting'])
 export const NEED_TYPES: ReadonlySet<string> = new Set(['requirement', 'issue'])
@@ -81,9 +81,7 @@ export function countedFrom(pin: Pin | TaskRecord | null | undefined): number | 
 }
 
 export function addMoment(state: TrackingState, moment: Moment): void {
-  const current = state.turns[state.turns.length - 1]
-  if (current === undefined || moment.byPerson) state.turns.push({ start: moment.at, last: moment.at })
-  else current.last = Math.max(current.last, moment.at)
+  state.turns = withMoment(state.turns, moment)
 }
 
 /**

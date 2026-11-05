@@ -17,6 +17,21 @@ test("the person's moment opens a turn, the agent's extends the current one", as
   ])
 })
 
+test("a turn ends with the agent's answer: the agent's moments after it, until the person's next one, are the person's gap", async () => {
+  let turns = withMoment([], { at: 0, byPerson: true })
+  turns = withMoment(turns, { at: minutes(5), byPerson: false, ends: true })
+  // a background task's notification, 20 minutes later: the agent works on it unprompted
+  turns = withMoment(turns, { at: minutes(25), byPerson: false })
+  turns = withMoment(turns, { at: minutes(26), byPerson: false, ends: true })
+  expect(turns).toEqual([{ start: 0, last: minutes(5), ended: true }])
+  turns = withMoment(turns, { at: minutes(30), byPerson: true })
+  expect(spansOf(turns, { at: minutes(32), byPerson: false })).toEqual([
+    { start: 0, end: minutes(5), kind: 'turn' },
+    { start: minutes(5), end: minutes(30), kind: 'gap' },
+    { start: minutes(30), end: minutes(32), kind: 'turn' },
+  ])
+})
+
 test('each turn and each gap is judged whole: counted, ambiguous or dropped', async () => {
   // turn 0→10 counted; gap 10→35 (25 min) ambiguous; turn 35→80 (45 min) dropped; gap 80→85 and turn 85→90 counted
   const turns = [

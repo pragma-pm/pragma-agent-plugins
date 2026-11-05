@@ -63,6 +63,8 @@ type Pragma = {
   now?: number
   /** The session's working directory; the registered one by default. */
   cwd?: string
+  /** What happens in the session while a call other than Pragma's runs: a long call, the person meanwhile. */
+  during?: () => Promise<void>
 }
 
 /** A need that already exists and its task, as `get_manageable` answers them: their project named by id alone. */
@@ -88,9 +90,11 @@ function engine(on: On, pragma: Pragma = {}): MockClock {
   on('fs.stat', (_, e) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('prompt.submit', (_, e) => ({ text: e.text, context: e.context }))
-  on('tool.call', (_, e) => {
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  on('tool.call', async (_, e) => {
     const fields: Record<string, unknown> = e
     pragma.calls?.push(e.tool)
+    if (!e.tool.startsWith('mcp__pragma__')) await pragma.during?.()
     if (e.tool === 'mcp__pragma__list_projects') {
       const outage = pragma.outages?.shift()
       if (outage === 'deny') return { deny: 'refused by the permission rules' }
@@ -258,6 +262,73 @@ test('a refused lookup is not asked again, neither at the next call nor at the n
   await findNeed($)
   await typePrompt($, 'go on')
   expect(calls.filter(tool => tool === 'mcp__pragma__list_projects')).toHaveLength(1)
+})
+
+// ---------------------------------------------------------------- turns and gaps
+
+const MINUTE = 60_000
+
+/** The person sends a prompt from the composer; the line the hooks put beside it. */
+async function promptLine($: Engine, text: string): Promise<string> {
+  const submitted = await $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
+  return submitted.context?.join('\n') ?? ''
+}
+
+/** The main loop's turn ends: its answer is written. */
+async function endTurn($: Engine, turnId: string): Promise<void> {
+  await $.turn.complete({ answer: 'done', durationMs: 0, isAborted: false, turnId, reason: 'answer' })
+}
+
+/** The session opens; a minute later the person asks, and the agent pins the task. */
+async function pinnedSession($: Engine, on: On, pragma: Pragma): Promise<MockClock> {
+  const clock = engine(on, { items: existingItems('project__p'), now: Date.UTC(2026, 10, 5, 9), ...pragma })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await clock.advance(MINUTE)
+  await typePrompt($, 'fix the login')
+  await findNeed($)
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  return clock
+}
+
+test('a prompt sent while a subagent\'s call runs is kept: the break before it stays a gap, not a turn', async ($, on) => {
+  let during: (() => Promise<void>) | undefined
+  const clock = await pinnedSession($, on, { during: () => during?.() ?? Promise.resolve() })
+
+  // a background subagent's call runs 45 minutes; meanwhile the turn ends, the person is away 40 minutes, then asks again
+  during = async () => {
+    await clock.advance(5 * MINUTE)
+    await endTurn($, 'turn-1')
+    await clock.advance(40 * MINUTE)
+    await typePrompt($, 'and the logout')
+    await clock.advance(MINUTE)
+  }
+  await $.tool.call({ tool: 'Bash', command: 'npm test', agentId: 'agent-1' })
+  during = undefined
+  await clock.advance(MINUTE)
+
+  // the person writing the first prompt (1m), the first turn (5m), the 40 min break dropped, the second turn (1m), reading (1m)
+  const line = await promptLine($, 'go on')
+  expect(line).toContain('Task: 8m unlogged since it started counting')
+  expect(line).not.toContain('ambiguous')
+})
+
+test('a background task\'s notification after the turn ended does not stretch the turn over the person\'s gap', async ($, on) => {
+  const clock = await pinnedSession($, on, {})
+  await clock.advance(5 * MINUTE)
+  await endTurn($, 'turn-1')
+
+  // 25 minutes later a background task is done: the agent reads its output, unprompted
+  await clock.advance(25 * MINUTE)
+  await $.prompt.submit({ text: '<task-notification>', origin: { kind: 'task-notification' }, wait: false })
+  await $.tool.call({ tool: 'Bash', command: 'cat build.log' })
+  await clock.advance(MINUTE)
+  await endTurn($, 'turn-2')
+  await clock.advance(MINUTE)
+
+  // the person writing (1m) and the first turn (5m); the gap since it ended, 27 min, is the one asked about
+  const line = await promptLine($, 'go on')
+  expect(line).toContain('Task: 6m unlogged since it started counting')
+  expect(line).toContain('+27m ambiguous')
 })
 
 // ---------------------------------------------------------------- /pragma:refresh

@@ -36,8 +36,12 @@ export type Pending = { kind: 'adjust' | 'delete'; label: string; state?: 'runni
 /** A stretch of the session, in epoch seconds: one of the agent's turns, or one of the person's gaps. */
 export type Span = { start: number; end: number; kind: 'turn' | 'gap' }
 
-/** One turn: the moment of the person's that opened it, the agent's last moment in it. Epoch seconds. */
-export type Turn = { start: number; last: number }
+/**
+ * One turn: the moment of the person's that opened it, the agent's last moment in it. Epoch
+ * seconds. `ended` once the agent's answer was written: the agent's moments after it, until the
+ * person's next one, are in the person's gap.
+ */
+export type Turn = { start: number; last: number; ended?: true }
 
 /** A pinned need or task: when it was pinned, and where it started counting. Epoch seconds. */
 export type Pin = { id: string; pinnedAt: number; countedFrom: number }

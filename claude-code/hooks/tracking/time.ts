@@ -1,6 +1,7 @@
 // The session's time, as the hooks count it. The session alternates the agent's turns (from one
-// of the person's moments to the agent's last entry before the next one) and the person's gaps
-// (reading the answer, writing the next prompt). Each is judged whole, in three tiers.
+// of the person's moments to the end of the agent's answer) and the person's gaps (from there to
+// the person's next moment: reading the answer, writing the next prompt). Each is judged whole,
+// in three tiers.
 
 import type { Span, Turn } from '../../types'
 
@@ -10,16 +11,25 @@ export const COUNTED_SPAN_MINUTES = 20
 export const DROPPED_SPAN_MINUTES = 35
 // A span between the two is ambiguous: the agent asks the user whether to log it.
 
-/** A moment of the session: the person's (a prompt, a slash command, an answer) or the agent's. */
-export type Moment = { at: number; byPerson: boolean }
+/**
+ * A moment of the session: the person's (a prompt, a slash command, an answer) or the agent's;
+ * `ends`, the agent's answer written, the end of its turn.
+ */
+export type Moment = { at: number; byPerson: boolean; ends?: boolean }
 
 export type Working = { seconds: number; ambiguous: Span[] }
 
-/** The timeline after one more moment: the person's opens a turn, the agent's extends the current one. */
+/**
+ * The timeline after one more moment: the person's opens a turn, the agent's extends the current
+ * one until it ends. A turn that ended stays as it was: the agent at work on its own after it (a
+ * background task's notification, a subagent still running) is in the person's gap.
+ */
 export function withMoment(turns: readonly Turn[], moment: Moment): Turn[] {
   const current = turns[turns.length - 1]
   if (current === undefined || moment.byPerson) return [...turns, { start: moment.at, last: moment.at }]
-  return [...turns.slice(0, -1), { start: current.start, last: Math.max(current.last, moment.at) }]
+  if (current.ended === true) return [...turns]
+  const extended: Turn = { start: current.start, last: Math.max(current.last, moment.at) }
+  return [...turns.slice(0, -1), moment.ends === true ? { ...extended, ended: true } : extended]
 }
 
 /**

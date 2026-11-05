@@ -1,9 +1,9 @@
 // The time-tracking hooks on the module runtime: the protocol in the system prompt, the pin line
 // beside each prompt, the gates on tool calls, the tracking of the Pragma calls, the ledger of
-// unlogged time across sessions. The state lives in `$.state` (the menu reads it live) and is
-// mirrored into `$.store`, so a restarted or resumed session finds it again.
+// unlogged time across sessions. The state lives in `$.store`, so a restarted or resumed session
+// finds it again, and is mirrored into `$.state`, which the menu reads live.
 
-import { atom, read, update } from 'claude-code'
+import { atom, update } from 'claude-code'
 import type { CommandRunResult, EngineInterface, On, PromptComposeSection } from 'claude-code'
 
 import type { Identity, Mapping, TrackingState } from '../../types'
@@ -131,15 +131,16 @@ export async function refreshRegistration($: EngineInterface): Promise<Mapping |
   return mapping
 }
 
-/** The session's state, restored from the store after a restart; null while the directory is not registered. */
+/**
+ * The session's state as last written, also after a restart; null while the directory is not
+ * registered. Read from the store, never from `$.state`: every read of `$.state` in one dispatch
+ * answers the moment the dispatch began, so a hook reading it again after a call (a subagent's
+ * long command, a question to the person) would write back the state from before the call, and
+ * lose the prompt the person sent meanwhile.
+ */
 export async function loadState($: EngineInterface): Promise<TrackingState | null> {
   if (mapping === null) return null
   const sessionId = await $.session.id()
-  const current = await read($, sessionAtom)
-  if (current !== null && current.sessionId === sessionId) {
-    current.actorId = identity.actorId
-    return current
-  }
   const stored = await $.store.get(sessionKey(sessionId))
   const state = isTrackingState(stored) && stored.sessionId === sessionId ? stored : initialState(sessionId, mapping, identity.actorId, await nowSeconds($))
   state.actorId = identity.actorId
@@ -435,13 +436,14 @@ export function registerTracking(on: On): void {
     return { ...result, context: [...(result.context ?? []), context] }
   })
 
-  // The end of a turn is the agent's last moment in it; the ledger takes a snapshot.
+  // The end of a turn is the agent's last moment in it, and closes it: the agent at work after it
+  // (a background task's notification) is in the person's gap. The ledger takes a snapshot.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     const state = await loadState($)
     if (state === null) return next(e)
     const now = await nowSeconds($)
-    addMoment(state, { at: now, byPerson: false })
+    addMoment(state, { at: now, byPerson: false, ends: true })
     await saveState($, state)
     await upsertLedger($, state, now, false)
     return next(e)
