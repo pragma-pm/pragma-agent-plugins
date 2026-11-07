@@ -11,14 +11,20 @@ export const OVERRIDE_SENTENCE =
   'A warning, not a lock: when the user wants it done anyway, or the rule does not fit this call, say so to the user in one line ' +
   'and repeat the exact same call — a repeated call goes through.'
 
-// Work of a few minutes: on the need's previous task (the default), or a task of its own (the
-// person's preference, `preferences.taskForShortWork` in identity.json, asked at setup).
+// Tasks sized for traceability: a step of a few minutes inside larger work goes on the task it
+// serves (the default), or gets a task of its own (the person's preference,
+// `preferences.taskForShortWork` in identity.json, asked at setup). Work that is the session's
+// whole purpose gets its task either way, however short.
+const WHOLE_PURPOSE = 'Work that is the session\'s whole purpose gets its task and its time, however short: a two-minute fix is a task.'
 const SHORT_WORK_ON_PREVIOUS_TASK =
-  '**No task for work of a few minutes**: when the need already has a task, the work goes on its previous one — still pinned, ' +
-  'keep it; closed, pin it again (`revert_transition` undoes the close within 15 minutes of it, whatever the workflow allows; ' +
-  'later, `transition_manageable` back to in_progress), log, close it again.'
+  `**Tasks are for traceability, not an audit log.** ${WHOLE_PURPOSE} Within larger work, a step of a few minutes (a rename, a ` +
+  'test adjusted, a typo met on the way) is no task of its own: it goes on the task it serves — the pinned one, else the need\'s ' +
+  'task closed last. Split larger work where the pieces make sense apart: two hours is typically three or four tasks, never one ' +
+  'per edit. A step that changes files on a closed task pins it again (`revert_transition` undoes the close within 15 minutes of ' +
+  'it, whatever the workflow allows; later, `transition_manageable` back to in_progress), then log, close it again. Only to log ' +
+  'time, never revert nor pin: the entry goes on the closed task as it is (see «Logging time»).'
 const SHORT_WORK_ON_OWN_TASK =
-  '**A task for every piece of work**, a few minutes included: the person prefers the time split per piece over fewer tasks.'
+  `**A task for every piece of work**, steps of a few minutes included: the person prefers the time split per piece over fewer tasks. ${WHOLE_PURPOSE}`
 
 export function itemUrl(manageableId: string): string {
   return `${APP_URL}/items/${manageableId}`

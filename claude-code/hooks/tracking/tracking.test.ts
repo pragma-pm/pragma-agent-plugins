@@ -176,6 +176,28 @@ test('a transition to in_progress pins the task; a close is refused until the ti
   expect(closed.context?.join('\n')).toContain('The issue it answers, «Login fails», may be complete')
 })
 
+test('a closed task takes a late time entry as it is: no pin, no reopen', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__pragma__create_manageable', organizationId: 'organization__o', item: { type: 'issue', projectId: 'project__p', title: 'Login fails' } })
+  await $.tool.call({
+    tool: 'mcp__pragma__create_manageable',
+    organizationId: 'organization__o',
+    item: { type: 'task', projectId: 'project__p', title: 'Fix the token check', assignedActorIds: ['actor__me'] },
+  })
+  await $.tool.call({ tool: 'mcp__pragma__create_link', from: NEED, to: TASK, type: 'has_response' })
+  await $.tool.call({ tool: 'mcp__pragma__available_transitions', id: TASK })
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  await $.tool.call({ tool: 'mcp__pragma__add_time_entry', activityId: TASK, duration: 12, remaining: 0 })
+  const closed = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_done' })
+  expect(closed.context?.join('\n')).toContain('needs no reopen: add_time_entry on it as it is')
+
+  // nothing pinned now, and the entry goes through on the first call
+  const late = await $.tool.call({ tool: 'mcp__pragma__add_time_entry', activityId: TASK, duration: 3, remaining: 0, note: 'logged late' })
+  expect(late.deny).toBeUndefined()
+  expect(late.context?.join('\n')).toContain('Logged 3m on «Fix the token check»')
+})
+
 test('a time entry on a task the person is not known to be assigned to is refused once', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
@@ -196,6 +218,8 @@ test('the protocol rides the system prompt, filled for the directory and the per
   expect(protocol?.text).toContain('organization «Org» (`organization__o`)')
   expect(protocol?.text).toContain('actor id is `actor__me`')
   expect(protocol?.text).toContain('«Improvements» (project__p)')
+  expect(protocol?.text).toContain('**A time entry needs no pin.**')
+  expect(protocol?.text).toContain('a two-minute fix is a task')
 })
 
 test('a need found by search is pinned with its project\'s name, asked of Pragma once', async ($, on) => {

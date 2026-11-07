@@ -84,10 +84,10 @@ User settings are `~/.claude/settings.json`, project settings `.claude/settings.
 
 ## 5. Preferences
 
-Ask (AskUserQuestion) what happens with work of a few minutes:
+Ask (AskUserQuestion) what happens with a step of a few minutes inside larger work. A quick fix that is the session's whole purpose always gets its task, however short, whatever the answer:
 
-- **On the need's previous task** (default): no task is created for it; the previous task of the requirement or issue is pinned again, logged, closed again.
-- **A task of its own**: every piece of work gets a task, however short.
+- **On the task it serves** (default): no task is created for the step; it goes on the pinned task, else the need's task closed last — pinned again when the step changes files, logged on as it is when there is only time to log.
+- **A task of its own**: every piece of work gets a task, steps of a few minutes included.
 
 Store it in `identity.json` as `"preferences": { "taskForShortWork": false | true }`.
 

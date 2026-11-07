@@ -139,7 +139,8 @@ export function needFollowUp(state: TrackingState, taskId: string): string | nul
     `Task «${titleOf(state, taskId)}» closed. The ${kind} it answers, «${titleOf(state, needId)}», may be complete (${seen}; its tasks ` +
     `outside this session: \`graph_get_neighbors\` on it). Offer to move it: \`available_transitions\` on the ${kind}, then ask the user ` +
     'with the AskUserQuestion tool, never in plain text: one option per allowed transition (Done, In review, …) plus «Leave it as is». ' +
-    `Apply the answer with \`transition_manageable\`; the user decides, you never close ${article} ${kind} on your own.`
+    `Apply the answer with \`transition_manageable\`; the user decides, you never close ${article} ${kind} on your own. Time owed ` +
+    'to the task later needs no reopen: add_time_entry on it as it is.'
   )
 }
 

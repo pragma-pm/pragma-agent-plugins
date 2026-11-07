@@ -129,8 +129,9 @@ function pinnedTaskNote(taskId: string, title: string, closed: boolean, unlogged
     unlogged === 0
       ? ''
       : closed
-        ? ` Its ${hm(unlogged)} unlogged are not logged yet: first in your next turn, add_time_entry({ activityId: "${taskId}", ` +
-          `duration: ${unlogged}, remaining: 0, note: "logged after a close outside the session" }), then one line to the user.`
+        ? ` Its ${hm(unlogged)} unlogged are not logged yet: first in your next turn, on the task as it is (no reopen), ` +
+          `add_time_entry({ activityId: "${taskId}", duration: ${unlogged}, remaining: 0, note: "logged after a close outside the session" }), ` +
+          'then one line to the user.'
         : ` Its ${hm(unlogged)} unlogged have no task left: ask the user with AskUserQuestion whether to log them on another ` +
           'task of the need (which one) or drop them.'
   return (

@@ -387,7 +387,7 @@ export function registerTracking(on: On): void {
       sections.push({ id: 'pragma:protocol', scope: 'session', text: fillProtocol(mapping, identity) })
       const reminders = await ledgerReminders($, mapping.directory, await $.session.id())
       if (reminders.length > 0) {
-        sections.push({ id: 'pragma:unlogged', scope: 'session', text: `Unlogged time from previous sessions in this directory:\n${reminders.join('\n')}` })
+        sections.push({ id: 'pragma:unlogged', scope: 'session', text: `Unlogged time from previous sessions in this directory (add_time_entry on the task as it is: a closed task stays closed, no pin needed):\n${reminders.join('\n')}` })
       }
     }
     sections.push(...(await pendingSections($)))

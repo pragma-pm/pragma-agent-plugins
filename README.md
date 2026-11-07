@@ -14,7 +14,7 @@ Then, in a session opened in the directory to track (a code repository, a client
 What a tracked session looks like:
 
 - Before the agent changes a file, it pins a Pragma task: it finds or creates the requirement or issue the work answers, finds or creates a task under it, assigns you, moves the task to *in progress*. A file change while nothing is pinned is refused once.
-- When the task is done, the agent logs the time you spent, as the hooks timed the session, and closes the task. A close without a time entry, or with unlogged minutes beyond a small slack, is refused once with the minutes computed.
+- When the task is done, the agent logs the time you spent, as the hooks timed the session, and closes the task. A close without a time entry, or with unlogged minutes beyond a small slack, is refused once with the minutes computed. Time owed to a task already closed is logged on it as it is: a time entry needs no pin, so the agent never reopens a task just to log, which would leave a reopen and a second close in its history.
 - A closed task may complete its requirement or issue: the agent then offers to move it, as a choice among its allowed transitions. You decide; the agent never closes a requirement or an issue on its own. Every such question is an interactive choice, never a line of text to answer.
 - A `◷ Pragma` button above the prompt opens a menu of the session's Pragma objects: the project, the requirements and issues, the tasks, with the minutes logged on each. It is there from the session start in a registered directory, uncolored until the session touches a Pragma item. An entry opens its page. A task's minutes can be adjusted, a task deleted with its minutes moved to the previous one. The pinned task's unlogged minutes show at the end of the hint row under the prompt.
 - The menu shows each item as the session last saw it. `/pragma:refresh` reads them again from Pragma: an item closed, reopened, renamed, archived or deleted elsewhere (the webapp, another session) shows as it is now. A pinned task closed or gone outside the session is unpinned, and its unlogged minutes go to the agent to log at its next turn.
@@ -29,7 +29,7 @@ Every refusal is a warning, not a lock: the same call repeated goes through. The
 2. Who you are in Pragma: your actor id, stored in `~/.claude/pragma/identity.json`.
 3. The directory: its organization and the default projects for work that belongs to no initiative — one catch-all project, one per kind of work (problems, improvements, kinds of your own), or none — stored in `~/.claude/pragma/directories.json`. The hooks cover the directory and everything under it, and are inert elsewhere.
 4. Permission rules for the Pragma tools the agent calls on your behalf, so neither you nor the auto-mode classifier is asked for each.
-5. Your preference for work of a few minutes: on the need's previous task, or a task of its own.
+5. Your preference for a step of a few minutes inside larger work: on the task it serves, or a task of its own. A quick fix on its own always gets its task.
 
 ### What the plugin reads and writes
 
