@@ -222,6 +222,51 @@ test('the protocol rides the system prompt, filled for the directory and the per
   expect(protocol?.text).toContain('a two-minute fix is a task')
 })
 
+test('tasks linked in bulk are pinned under their need, not under the need read last', async ($, on) => {
+  const other = 'manageable_issue__n2'
+  engine(on, { items: { [other]: { id: other, manageableType: 'issue', body: { title: 'Export is slow' }, scope: { projectIds: ['project__p'] } } } })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+
+  await $.tool.call({ tool: 'mcp__pragma__create_manageable', organizationId: 'organization__o', item: { type: 'issue', projectId: 'project__p', title: 'Login fails' } })
+  await $.tool.call({
+    tool: 'mcp__pragma__create_manageable',
+    organizationId: 'organization__o',
+    item: { type: 'task', projectId: 'project__p', title: 'Fix the token check', assignedActorIds: ['actor__me'] },
+  })
+  await $.tool.call({ tool: 'mcp__pragma__bulk_create_links', links: [{ from: NEED, to: TASK, type: 'has_response' }] })
+  // another need read since: the last one seen, not this task's
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: other })
+  await $.tool.call({ tool: 'mcp__pragma__available_transitions', id: TASK })
+
+  const pinned = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  expect(pinned.context?.join('\n')).toContain('Pinned task «Fix the token check» under issue «Login fails»')
+})
+
+test('a task read with get_manageable is pinned under the need its own links name', async ($, on) => {
+  const other = 'manageable_issue__n2'
+  engine(on, {
+    items: {
+      [TASK]: {
+        id: TASK,
+        manageableType: 'task',
+        body: { title: 'Fix the token check' },
+        scope: { projectIds: ['project__p'] },
+        assignees: { actor__me: { isRequest: false } },
+        links: { [NEED]: { type: 'has_response', manageableType: 'issue', reversed: true, title: 'Login fails' } },
+      },
+      [other]: { id: other, manageableType: 'issue', body: { title: 'Export is slow' }, scope: { projectIds: ['project__p'] } },
+    },
+  })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: TASK })
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: other })
+  await $.tool.call({ tool: 'mcp__pragma__available_transitions', id: TASK })
+
+  const pinned = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  expect(pinned.context?.join('\n')).toContain('Pinned task «Fix the token check» under issue «Login fails»')
+})
+
 test('a need found by search is pinned with its project\'s name, asked of Pragma once', async ($, on) => {
   const calls: string[] = []
   engine(on, { projects: [{ id: 'project__x', title: 'Client Portal' }], items: existingItems('project__x'), calls })

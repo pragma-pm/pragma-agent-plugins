@@ -76,6 +76,39 @@ function rememberCategories(state: TrackingState, data: Record<string, unknown>)
   if (currentStateId !== null && currentCategory !== null) state.stateCategories[currentStateId] = currentCategory
 }
 
+/** Whether `source --has_response--> target` is a need answered by a task or a meeting. */
+function answersNeed(source: string, target: string): boolean {
+  const sourceType = manageableType(source)
+  const targetType = manageableType(target)
+  return sourceType !== null && NEED_TYPES.has(sourceType) && targetType !== null && ACTIVITY_TYPES.has(targetType)
+}
+
+/** A link the agent made, alone or in bulk: a need answered by a task or a meeting is that task's need, and the need last seen. */
+function rememberLink(state: TrackingState, link: Record<string, unknown> | null, now: number): void {
+  const source = stringField(link, 'from') ?? ''
+  const target = stringField(link, 'to') ?? ''
+  if (stringField(link, 'type') !== 'has_response' || !answersNeed(source, target)) return
+  state.needOf[target] = source
+  state.lastNeedSeen = source
+  recordOf(state, target, now)
+}
+
+/**
+ * A task or a meeting read: the need its own links say it answers, with that need's title, unless
+ * the session already knows its need. Without it, a task linked before the session (or in bulk)
+ * would be pinned under the need seen last.
+ */
+function rememberOwnNeed(state: TrackingState, id: string, links: Record<string, unknown> | null): void {
+  if (state.needOf[id] !== undefined) return
+  for (const [other, link] of Object.entries(links ?? {})) {
+    if (!isRecord(link) || link['type'] !== 'has_response' || link['reversed'] !== true || !answersNeed(other, id)) continue
+    state.needOf[id] = other
+    const title = stringField(link, 'title')
+    if (title !== null && state.titles[other] === undefined) state.titles[other] = title
+    return
+  }
+}
+
 /** A transition of a task or a need: a pin, a close, or neither. The line for the model, if any. */
 export function trackTransition(state: TrackingState, mapping: Mapping | null, manageableId: string, toStateId: string, now: number): string | null {
   const category = state.stateCategories[toStateId]
@@ -188,6 +221,7 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
     if (projectId !== null) state.projectOf[id] = projectId
     const type = manageableType(id)
     if (type !== null && NEED_TYPES.has(type)) state.lastNeedSeen = id
+    rememberOwnNeed(state, id, recordField(answer, 'links'))
     // An assignment request still pending is not an assignment.
     for (const [actorId, assignment] of Object.entries(recordField(answer, 'assignees') ?? {})) {
       const pending = isRecord(assignment) && assignment['isRequest'] === true && assignment['accepted'] !== true
@@ -204,15 +238,12 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
   }
 
   if (name === 'create_link') {
-    const source = stringField(fields, 'from') ?? ''
-    const target = stringField(fields, 'to') ?? ''
-    const sourceType = manageableType(source)
-    const targetType = manageableType(target)
-    if (stringField(fields, 'type') === 'has_response' && sourceType !== null && NEED_TYPES.has(sourceType) && targetType !== null && ACTIVITY_TYPES.has(targetType)) {
-      state.needOf[target] = source
-      state.lastNeedSeen = source
-      recordOf(state, target, now)
-    }
+    rememberLink(state, fields, now)
+    return null
+  }
+
+  if (name === 'bulk_create_links') {
+    for (const link of listField(fields, 'links')) rememberLink(state, isRecord(link) ? link : null, now)
     return null
   }
 
