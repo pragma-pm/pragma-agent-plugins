@@ -6,14 +6,14 @@
 import { atom, update } from 'claude-code'
 import type { CommandRunResult, EngineInterface, On, PromptComposeSection } from 'claude-code'
 
-import type { Identity, Mapping, TrackingState } from '../../types'
+import type { Identity, Mapping, TimeEntry, TrackingState } from '../../types'
 import { pendingSections, settleQueuedAction } from '../menu/queued'
 import { WRITE_TOOLS, gateClose, gateLog, gateWork } from './gates'
 import { REFRESH_COMMAND, applyReadings, readingOf, refreshableIds, unknownWorkflows, type CallOutcome, type ItemReading } from './refresh'
 import { addMoment, describePin, initialState, isRecord, isTrackingState, loggedMinutes, needFigure, taskFigure, titleOf, unnamedProjects } from './state'
 import { ambiguitySentence, fillProtocol } from './texts'
 import { hhmm, hm, isoDay } from './time'
-import { TOOL_PREFIX, parseAnswer, rememberProject, track } from './track'
+import { TOOL_PREFIX, parseAnswer, rememberProject, stringField, track } from './track'
 
 const INTERIM_NUDGE_MINUTES = 30
 const LEDGER_THRESHOLD_MINUTES = 5
@@ -172,8 +172,11 @@ type LedgerRow = {
   taskId: string | null
   taskTitle: string | null
   workingMinutes: number
+  /** What the session logged for its own work. */
   loggedMinutes: number
   unloggedMinutes: number
+  /** What later sessions' time entries settled of it: logged for it, or found owed nothing. Kept when the session writes its row again. */
+  settledMinutes?: number
   date: string
   updatedAt: number
 }
@@ -187,9 +190,14 @@ async function readLedger($: EngineInterface): Promise<LedgerRow[]> {
   return Array.isArray(stored) ? stored.filter(isLedgerRow) : []
 }
 
-/** The session's row of the ledger of unlogged time: what the need has been worked on, minus what was logged. */
+/**
+ * The session's row of the ledger of unlogged time: what the need has been worked on, minus what
+ * the session logged for it and what later sessions settled of it.
+ */
 async function upsertLedger($: EngineInterface, state: TrackingState, now: number, byPerson: boolean): Promise<void> {
-  const rows = (await readLedger($)).filter(row => now - row.updatedAt < RETENTION_DAYS * 86_400 && row.sessionId !== state.sessionId)
+  const stored = await readLedger($)
+  const settled = stored.find(row => row.sessionId === state.sessionId)?.settledMinutes ?? 0
+  const rows = stored.filter(row => now - row.updatedAt < RETENTION_DAYS * 86_400 && row.sessionId !== state.sessionId)
   if (state.need !== null || state.task !== null) {
     const working = needFigure(state, { at: now, byPerson }).minutes
     const logged = loggedMinutes(state)
@@ -202,7 +210,8 @@ async function upsertLedger($: EngineInterface, state: TrackingState, now: numbe
       taskTitle: state.task === null ? null : titleOf(state, state.task.id),
       workingMinutes: working,
       loggedMinutes: logged,
-      unloggedMinutes: Math.max(0, working - logged),
+      unloggedMinutes: Math.max(0, working - logged - settled),
+      ...(settled > 0 ? { settledMinutes: settled } : {}),
       date: isoDay(now),
       updatedAt: now,
     })
@@ -210,15 +219,53 @@ async function upsertLedger($: EngineInterface, state: TrackingState, now: numbe
   await $.store.set(LEDGER_KEY, rows)
 }
 
-async function ledgerReminders($: EngineInterface, directory: string, sessionId: string): Promise<string[]> {
-  return (await readLedger($))
-    .filter(row => row.directory === directory && row.sessionId !== sessionId && row.unloggedMinutes >= LEDGER_THRESHOLD_MINUTES)
-    .map(
-      row =>
-        `- ${row.date}: ~${hm(row.unloggedMinutes)} unlogged on «${row.taskTitle ?? '?'}» (${row.taskId ?? 'no task id'}) under ` +
-        `«${row.needTitle ?? '?'}» — log it (dateOfWork ${row.date}) or say why not.`,
-    )
+/** A row the reminder names to the session: another session's, in its directory, with minutes owed. */
+function isReminded(row: LedgerRow, state: Pick<TrackingState, 'directory' | 'sessionId'>): boolean {
+  return row.directory === state.directory && row.sessionId !== state.sessionId && row.unloggedMinutes >= LEDGER_THRESHOLD_MINUTES
 }
+
+/**
+ * A time entry answering the reminder: dated a day it names, on a line's task or a task of its
+ * need. It settles those lines, oldest first, by its minutes; an entry of 0 minutes settles them
+ * whole: nothing owed, its note says why. An entry without a `dateOfWork` is the session's own work
+ * of today and settles nothing: an earlier session's line of the same day stays. The minutes the
+ * entry gave those lines; null when it answered none.
+ */
+async function settleLedger($: EngineInterface, state: TrackingState, entry: TimeEntry, dateOfWork: string | null): Promise<number | null> {
+  if (dateOfWork === null) return null
+  const needId = state.needOf[entry.activityId]
+  const rows = await readLedger($)
+  const answered = rows
+    .filter(row => isReminded(row, state) && row.date === dateOfWork && (row.taskId === entry.activityId || (needId !== undefined && row.needId === needId)))
+    .sort((a, b) => a.updatedAt - b.updatedAt)
+  if (answered.length === 0) return null
+  let left = entry.duration
+  for (const row of answered) {
+    const taken = entry.duration === 0 ? row.unloggedMinutes : Math.min(left, row.unloggedMinutes)
+    if (taken === 0) continue
+    row.unloggedMinutes -= taken
+    row.settledMinutes = (row.settledMinutes ?? 0) + taken
+    if (entry.duration > 0) left -= taken
+  }
+  await $.store.set(LEDGER_KEY, rows)
+  return entry.duration - left
+}
+
+function reminderLine(row: LedgerRow): string {
+  const need = row.needId === null ? '«?»' : row.needTitle !== null && row.needTitle !== row.needId ? `«${row.needTitle}» (${row.needId})` : row.needId
+  const task = row.taskId === null ? `a task of ${need}` : `«${row.taskTitle ?? '?'}» (${row.taskId}) under ${need}`
+  return `- ${row.date}: ~${hm(row.unloggedMinutes)} unlogged on ${task} — dateOfWork "${row.date}".`
+}
+
+async function ledgerReminders($: EngineInterface, state: Pick<TrackingState, 'directory' | 'sessionId'>): Promise<string[]> {
+  return (await readLedger($)).filter(row => isReminded(row, state)).map(reminderLine)
+}
+
+const LEDGER_HEADER =
+  'Unlogged time from previous sessions in this directory. Log each line with add_time_entry on its task, else on a task of ' +
+  'its need, as the task is (a closed task stays closed, no pin needed), with the line\'s day as dateOfWork: that entry settles ' +
+  'the line, which then leaves this list. Nothing owed (already logged elsewhere, or the user says not to log it)? An entry of 0 ' +
+  'minutes on that task and day, with a note saying why, settles it too.'
 
 // ---------------------------------------------------------------- the lines for the model
 
@@ -385,10 +432,8 @@ export function registerTracking(on: On): void {
     const sections: PromptComposeSection[] = []
     if (mapping !== null) {
       sections.push({ id: 'pragma:protocol', scope: 'session', text: fillProtocol(mapping, identity) })
-      const reminders = await ledgerReminders($, mapping.directory, await $.session.id())
-      if (reminders.length > 0) {
-        sections.push({ id: 'pragma:unlogged', scope: 'session', text: `Unlogged time from previous sessions in this directory (add_time_entry on the task as it is: a closed task stays closed, no pin needed):\n${reminders.join('\n')}` })
-      }
+      const reminders = await ledgerReminders($, { directory: mapping.directory, sessionId: await $.session.id() })
+      if (reminders.length > 0) sections.push({ id: 'pragma:unlogged', scope: 'session', text: `${LEDGER_HEADER}\n${reminders.join('\n')}` })
     }
     sections.push(...(await pendingSections($)))
     return sections.length === 0 ? composed : { sections: [...composed.sections, ...sections] }
@@ -427,7 +472,13 @@ export function registerTracking(on: On): void {
     addMoment(settled, { at: after, byPerson: answered && e.tool === 'AskUserQuestion' })
     let context: string | null = null
     if (answered && e.tool.startsWith(TOOL_PREFIX)) {
+      const entries = settled.timeEntries.length
       context = track(settled, mapping, e.tool, fields, parseAnswer(result.text), after)
+      const logged = e.tool === `${TOOL_PREFIX}add_time_entry` ? settled.timeEntries[entries] : undefined
+      if (logged !== undefined) {
+        const given = await settleLedger($, settled, logged, stringField(fields, 'dateOfWork'))
+        if (given !== null) logged.settled = given
+      }
       await settleQueuedAction($, e.tool, fields)
       settled = await nameProjects($, settled)
     }

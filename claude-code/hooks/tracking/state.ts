@@ -84,6 +84,16 @@ export function addMoment(state: TrackingState, moment: Moment): void {
   state.turns = withMoment(state.turns, moment)
 }
 
+/** An entry wholly for the time other sessions left unlogged: no part of this session's own work. */
+function forOtherSessions(entry: TimeEntry): boolean {
+  return entry.settled !== undefined && entry.settled >= entry.duration
+}
+
+/** The session's own time entries: those for other sessions' unlogged time left out. */
+export function ownEntries(state: TrackingState): TimeEntry[] {
+  return state.timeEntries.filter(entry => !forOtherSessions(entry))
+}
+
 /**
  * Where a task pinned now starts counting. A task still pinned owns the time until now. Otherwise
  * the new task takes the current turn and the gap before it — the person writing the prompt, from
@@ -94,14 +104,17 @@ export function countingStart(state: TrackingState, now: number): number {
   if (state.task !== null) return now
   const spans = spansOf(state.turns, { at: now, byPerson: false })
   const gapBefore = spans.length > 1 ? spans[spans.length - 2] : spans[0]
-  const accounted = state.timeEntries.map(entry => entry.at)
+  const accounted = ownEntries(state).map(entry => entry.at)
   for (const task of Object.values(state.tasks)) if (task.closedAt !== undefined) accounted.push(task.closedAt)
   return Math.max(gapBefore?.start ?? now, ...accounted)
 }
 
-/** The task's last time entry, else where its pin started counting; `logged` says which. */
+/**
+ * The task's last time entry, else where its pin started counting; `logged` says which. An entry
+ * for another session's time does not cover this session's work before it.
+ */
 export function unloggedSince(state: TrackingState, activityId: string): { since: number | null; logged: boolean } {
-  const entries = state.timeEntries.filter(entry => entry.activityId === activityId).map(entry => entry.at)
+  const entries = ownEntries(state).filter(entry => entry.activityId === activityId).map(entry => entry.at)
   const pinStart = countedFrom(state.tasks[activityId]) ?? 0
   const since = Math.max(...entries, pinStart)
   return { since: since > 0 ? since : null, logged: entries.length > 0 }
@@ -146,13 +159,16 @@ export function needFigure(state: TrackingState, closing: Moment): NeedFigure {
   const since = countedFrom(state.need) ?? state.startedAt
   const { seconds, ambiguous } = working(state.turns, since, closing)
   // A time entry settles the spans before it: the protocol asks the user before logging.
-  const settledBefore = Math.max(state.settledAt, ...state.timeEntries.map(entry => entry.at))
+  const settledBefore = Math.max(state.settledAt, ...ownEntries(state).map(entry => entry.at))
   const open = ambiguous.filter(span => span.end > settledBefore)
   return { minutes: Math.round(seconds / 60), ambiguousMinutes: spanMinutes(open), ambiguous: open }
 }
 
+/** The minutes the session logged for its own work: what its entries gave other sessions' unlogged time left out. */
 export function loggedMinutes(state: TrackingState, activityId?: string): number {
-  return state.timeEntries.filter(entry => activityId === undefined || entry.activityId === activityId).reduce((sum, entry) => sum + entry.duration, 0)
+  return state.timeEntries
+    .filter(entry => activityId === undefined || entry.activityId === activityId)
+    .reduce((sum, entry) => sum + Math.max(0, entry.duration - (entry.settled ?? 0)), 0)
 }
 
 export function isAssigned(state: TrackingState, activityId: string, actorId: string): boolean {

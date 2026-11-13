@@ -46,8 +46,11 @@ export type Turn = { start: number; last: number; ended?: true }
 /** A pinned need or task: when it was pinned, and where it started counting. Epoch seconds. */
 export type Pin = { id: string; pinnedAt: number; countedFrom: number }
 
-/** A time entry the session logged, as Pragma answered it. */
-export type TimeEntry = { id: string | null; activityId: string; duration: number; at: number; note: string | null }
+/**
+ * A time entry the session logged, as Pragma answered it. `settled`: the minutes of it that went
+ * to other sessions' unlogged time, the ledger's lines it answered; absent when it answered none.
+ */
+export type TimeEntry = { id: string | null; activityId: string; duration: number; at: number; note: string | null; settled?: number }
 
 /** What the session knows of an item it touched. Epoch seconds. */
 export type TaskRecord = {

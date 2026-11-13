@@ -65,6 +65,8 @@ type Pragma = {
   cwd?: string
   /** What happens in the session while a call other than Pragma's runs: a long call, the person meanwhile. */
   during?: () => Promise<void>
+  /** The session the engine runs now: a test switches its id to play several sessions over one store. */
+  session?: { id: string }
 }
 
 /** A need that already exists and its task, as `get_manageable` answers them: their project named by id alone. */
@@ -79,7 +81,7 @@ function engine(on: On, pragma: Pragma = {}): MockClock {
   mock.env(on, { HOME })
   mock.store(on)
   const clock = mock.clock(on, pragma.now === undefined ? undefined : { now: pragma.now })
-  on('session.id', () => ({ value: 'session-1' }))
+  on('session.id', () => ({ value: pragma.session?.id ?? 'session-1' }))
   on('session.cwd', () => ({ value: pragma.cwd ?? DIRECTORY }))
   on('session.repo', () => ({ value: null }))
   on('fs.read', (_, e) => {
@@ -398,6 +400,91 @@ test('a background task\'s notification after the turn ended does not stretch th
   const line = await promptLine($, 'go on')
   expect(line).toContain('Task: 6m unlogged since it started counting')
   expect(line).toContain('+27m ambiguous')
+})
+
+// ---------------------------------------------------------------- the ledger of unlogged time
+
+/** The reminder of other sessions' unlogged time the system prompt carries now; undefined when none. */
+async function unloggedReminder($: Engine): Promise<string | undefined> {
+  const composed = await $.prompt.compose({ model: 'model', promptModel: 'model', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] })
+  return composed.sections.find(section => section.id === 'pragma:unlogged')?.text
+}
+
+/** Session 1 opens on 2026-11-12 at 09:00, pins the task a minute later, works 12 minutes, logs nothing: 13m owed. */
+async function earlierSession($: Engine, on: On, session: { id: string }): Promise<MockClock> {
+  on('prompt.compose', () => ({ sections: [] }))
+  const clock = await pinnedSession($, on, { now: Date.UTC(2026, 10, 12, 9), session })
+  await clock.advance(12 * MINUTE)
+  await endTurn($, 'turn-1')
+  return clock
+}
+
+/** Another session opens: its id, then its start. */
+async function openSession($: Engine, session: { id: string }, id: string): Promise<void> {
+  session.id = id
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+}
+
+test('a later session logs an earlier one\'s unlogged minutes: the reminder stops naming them, and its own minutes stay owed', async ($, on) => {
+  const session = { id: 'session-1' }
+  const clock = await earlierSession($, on, session)
+
+  // the next day, session 2 is reminded, takes up the same task, and logs session 1's minutes on their day
+  await clock.advance(24 * 60 * MINUTE)
+  await openSession($, session, 'session-2')
+  expect(await unloggedReminder($)).toContain('2026-11-12: ~13m unlogged')
+  await typePrompt($, 'log yesterday, then go on with the login')
+  await findNeed($)
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  await clock.advance(10 * MINUTE)
+  await $.tool.call({ tool: 'mcp__pragma__add_time_entry', activityId: TASK, duration: 13, dateOfWork: '2026-11-12', remaining: 30, note: 'unlogged in an earlier session' })
+  // the entry for session 1 is not session 2's: its own 10 minutes on the task are still unlogged
+  expect(await promptLine($, 'go on')).toContain('Task: 10m unlogged since it started counting')
+  await endTurn($, 'turn-2')
+
+  // session 3: session 1's minutes are logged, session 2's are not
+  await clock.advance(MINUTE)
+  await openSession($, session, 'session-3')
+  const reminder = await unloggedReminder($)
+  expect(reminder).not.toContain('2026-11-12')
+  expect(reminder).toContain('2026-11-13: ~10m unlogged')
+})
+
+test('an entry of 0 minutes dated the reminded day settles it, and session 1 resumed does not bring it back', async ($, on) => {
+  const session = { id: 'session-1' }
+  const clock = await earlierSession($, on, session)
+
+  await clock.advance(24 * 60 * MINUTE)
+  await openSession($, session, 'session-2')
+  await typePrompt($, 'those 13 minutes were logged by hand')
+  await findNeed($)
+  await $.tool.call({ tool: 'mcp__pragma__add_time_entry', activityId: TASK, duration: 0, dateOfWork: '2026-11-12', remaining: 0, note: 'already logged by hand' })
+  await endTurn($, 'turn-2')
+
+  // session 1 resumed: its turn ends, its row is written again
+  await openSession($, session, 'session-1')
+  await endTurn($, 'turn-3')
+
+  await openSession($, session, 'session-3')
+  expect(await unloggedReminder($)).toBeUndefined()
+})
+
+test('an entry for the session\'s own work today leaves an earlier session\'s line of the same day as it is', async ($, on) => {
+  const session = { id: 'session-1' }
+  const clock = await earlierSession($, on, session)
+
+  // later that day, session 2 works 5 minutes on the same task and logs them, no dateOfWork: its own
+  await clock.advance(60 * MINUTE)
+  await openSession($, session, 'session-2')
+  await typePrompt($, 'the logout too')
+  await findNeed($)
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  await clock.advance(5 * MINUTE)
+  await $.tool.call({ tool: 'mcp__pragma__add_time_entry', activityId: TASK, duration: 5, remaining: 0 })
+  await endTurn($, 'turn-2')
+
+  await openSession($, session, 'session-3')
+  expect(await unloggedReminder($)).toContain('2026-11-12: ~13m unlogged')
 })
 
 // ---------------------------------------------------------------- /pragma:refresh
