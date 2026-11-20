@@ -9,8 +9,8 @@ import type { CommandRunResult, EngineInterface, On, PromptComposeSection } from
 import type { Identity, Mapping, TimeEntry, TrackingState } from '../../types'
 import { pendingSections, settleQueuedAction } from '../menu/queued'
 import { WRITE_TOOLS, gateClose, gateLog, gateWork } from './gates'
-import { REFRESH_COMMAND, applyReadings, readingOf, refreshableIds, unknownWorkflows, type CallOutcome, type ItemReading } from './refresh'
-import { addMoment, describePin, initialState, isRecord, isTrackingState, loggedMinutes, needFigure, taskFigure, titleOf, unnamedProjects } from './state'
+import { REFRESH_COMMAND, applyReadings, readingOf, unknownWorkflows, type CallOutcome, type ItemReading } from './refresh'
+import { addMoment, describePin, initialState, isRecord, isTrackingState, loggedMinutes, menuItemIds, needFigure, taskFigure, titleOf, unnamedProjects } from './state'
 import { ambiguitySentence, fillProtocol } from './texts'
 import { hhmm, hm, isoDay } from './time'
 import { TOOL_PREFIX, parseAnswer, rememberProject, stringField, track } from './track'
@@ -371,7 +371,7 @@ async function refreshItems($: EngineInterface): Promise<CommandRunResult> {
   await refreshRegistration($)
   const state = await loadState($)
   if (state === null) return { text: 'Pragma: this directory is not tracked. /pragma:setup registers it.' }
-  const ids = refreshableIds(state)
+  const ids = menuItemIds(state)
   if (ids.length === 0) return { text: 'Pragma: no item in the menu yet, nothing to refresh.' }
   // The person's command is their moment, as a prompt is: the calls below are not the agent's turn.
   addMoment(state, { at: await nowSeconds($), byPerson: true })

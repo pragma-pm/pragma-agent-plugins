@@ -4,7 +4,7 @@ import type { BoxHoverProps, EngineInterface, Register, TextHoverProps, ToolCall
 import type { Editing, ObjectKind, Pending, PragmaObject, SessionEntry, TrackingState } from '../types'
 import { withoutKey } from './menu/queued'
 import { currentMapping, registerTracking } from './tracking/hooks'
-import { isClosed, knownProjectTitle, taskFigure } from './tracking/state'
+import { isClosed, knownProjectTitle, menuItemIds, menuProjectIds, taskFigure } from './tracking/state'
 import { APP_URL } from './tracking/texts'
 
 // The plugin's time-tracking hooks (`tracking/`, beside this file) keep the session's Pragma
@@ -118,12 +118,10 @@ function collectObjects(state: TrackingState): PragmaObject[] {
   const pinnedIds = new Set([state.need?.id, state.task?.id].filter((id): id is string => typeof id === 'string'))
   const closedIds = new Set(Object.entries(state.tasks).filter(([, task]) => isClosed(task)).map(([id]) => id))
   const entries = entriesByObject(state)
-  const titles: Record<string, string> = { ...state.titles }
+  const titles: Record<string, string> = Object.fromEntries(menuItemIds(state).map(id => [id, state.titles[id] ?? id]))
   const mapping = currentMapping()
-  for (const projectId of Object.values(state.projectOf)) {
-    titles[projectId] ??= knownProjectTitle(state, mapping, projectId) ?? projectId
-  }
-  const objects = Object.entries(titles).filter(([id]) => state.tasks[id]?.archivedAt === undefined).map(([id, title]): PragmaObject => {
+  for (const projectId of menuProjectIds(state)) titles[projectId] = knownProjectTitle(state, mapping, projectId) ?? projectId
+  const objects = Object.entries(titles).map(([id, title]): PragmaObject => {
     const own = entries[id] ?? []
     return {
       kind: kindOf(id), id, title, url: urlOf(id), isPinned: pinnedIds.has(id), isClosed: closedIds.has(id),

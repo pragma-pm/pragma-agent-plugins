@@ -40,6 +40,8 @@ function pragmaAnswer(tool: string, fields: Record<string, unknown>): unknown {
       return { id: fields['id'], newStateId: fields['toStateId'], transitioned: true }
     case 'mcp__pragma__add_time_entry':
       return { id: 'time_entry__e1', activityId: fields['activityId'], duration: fields['duration'], created: true }
+    case 'mcp__pragma__assign_activity':
+      return { activityId: fields['activityId'], workerId: fields['workerId'], isRequest: fields['isRequest'], assigned: true }
     default:
       return {}
   }
@@ -490,6 +492,7 @@ test('an entry for the session\'s own work today leaves an earlier session\'s li
 // ---------------------------------------------------------------- /pragma:refresh
 
 const OTHER_TASK = 'manageable_task__t2'
+const CANDIDATE = 'manageable_requirement__r1'
 
 /** The person types `/pragma:refresh`. */
 function runRefresh($: Engine): ReturnType<Engine['command']['run']> {
@@ -503,10 +506,14 @@ test('a refresh reads the menu\'s items again: a task closed elsewhere, a need r
   const calls: string[] = []
   const items = existingItems('project__p')
   items[OTHER_TASK] = { id: OTHER_TASK, manageableType: 'task', body: { title: 'Write the release note' }, scope: { projectIds: ['project__p'] }, assignees: {} }
+  items[CANDIDATE] = { id: CANDIDATE, manageableType: 'requirement', body: { title: 'Export the report' }, scope: { projectIds: ['project__p'] }, assignees: {} }
   engine(on, { items, workflows: { wf_issue: ISSUE_WORKFLOW }, calls })
   await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  // a candidate read and left: not in the menu, not read again
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: CANDIDATE })
   await findNeed($)
   await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: OTHER_TASK })
+  await $.tool.call({ tool: 'mcp__pragma__assign_activity', activityId: OTHER_TASK, workerId: 'actor__me', isRequest: false })
 
   // meanwhile, in the webapp
   items[TASK] = { ...(items[TASK] as object), status: 'inactive', workflowStateId: 'ws_done', workflowId: 'wf_task' }

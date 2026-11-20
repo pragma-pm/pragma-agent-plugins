@@ -10,6 +10,7 @@ const DIRECTORY = '/home/me/clients/acme'
 const ELSEWHERE = '/home/me/personal'
 const TASK = 'manageable_task__t1'
 const NEED = 'manageable_issue__n1'
+const CANDIDATE = 'manageable_requirement__r1'
 const BRAND = '#875ec6'
 const HINT = { isDraft: false, isWorking: false, hint: '? for shortcuts' }
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120, scroll: { offset: 0, bodyRows: 19 }, view: {} }
@@ -28,11 +29,13 @@ function pragmaAnswer(tool: string, fields: Record<string, unknown>): unknown {
       return { currentStateId: 'ws_todo', currentCategory: 'todo', transitions: [{ toStateId: 'ws_prog', toCategory: 'in_progress', allowed: true }] }
     case 'mcp__pragma__transition_manageable':
       return { id: fields['id'], newStateId: fields['toStateId'], transitioned: true }
-    // an existing need, its project named by id alone; list_projects names it
+    // an existing need, or a candidate weighed and left; their projects named by id alone, list_projects names them
     case 'mcp__pragma__get_manageable':
-      return { id: fields['id'], manageableType: 'issue', body: { title: 'Login fails' }, scope: { projectIds: ['project__x'] }, assignees: {} }
+      return fields['id'] === CANDIDATE
+        ? { id: CANDIDATE, manageableType: 'requirement', body: { title: 'Export the report' }, scope: { projectIds: ['project__y'] }, assignees: {} }
+        : { id: fields['id'], manageableType: 'issue', body: { title: 'Login fails' }, scope: { projectIds: ['project__x'] }, assignees: {} }
     case 'mcp__pragma__list_projects':
-      return [{ id: 'project__x', title: 'Client Portal' }]
+      return [{ id: 'project__x', title: 'Client Portal' }, { id: 'project__y', title: 'Reporting' }]
     default:
       return { id: TASK, type: 'task', title: 'Fix the token check', created: true }
   }
@@ -97,11 +100,31 @@ test('the menu names the project of a need found by search, not by its id', asyn
   engine(on, DIRECTORY)
   await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: NEED })
+  await createTask($)
+  await $.tool.call({ tool: 'mcp__pragma__create_link', from: NEED, to: TASK, type: 'has_response' })
 
   const band = await $.ui.mount({ plugin: 'pragma', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   await band.press({ key: 'pragma' })
   expect(await band.find({ text: /Client Portal/ })).toBeDefined()
   expect(await band.find({ text: /project__x/ })).toBeUndefined()
+})
+
+test('the menu lists the items the session acted on, not the candidates it only read', async ($, on) => {
+  engine(on, DIRECTORY)
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  // looking for the need: two candidates read, one kept
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: CANDIDATE })
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: NEED })
+
+  const reading = await $.ui.mount({ plugin: 'pragma', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  await reading.press({ key: 'pragma' })
+  expect(await reading.find({ text: /No Pragma item in this session yet/ })).toBeDefined()
+
+  await createTask($)
+  await $.tool.call({ tool: 'mcp__pragma__create_link', from: NEED, to: TASK, type: 'has_response' })
+  const band = await $.ui.mount({ plugin: 'pragma', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  for (const kept of [/Fix the token check/, /Login fails/, /Client Portal/, /Improvements/]) expect(await band.find({ text: kept })).toBeDefined()
+  for (const left of [/Export the report/, /Reporting/]) expect(await band.find({ text: left })).toBeUndefined()
 })
 
 test('the band yields to a survey', async ($, on) => {

@@ -4,7 +4,7 @@
 
 import type { Mapping, TrackingState } from '../../types'
 import {
-  ACTIVITY_TYPES, CLOSING_CATEGORIES, NEED_TYPES, countedFrom, countingStart, describePin, entryById, isClosed, isRecord,
+  ACTIVITY_TYPES, CLOSING_CATEGORIES, NEED_TYPES, actOn, countedFrom, countingStart, describePin, entryById, isClosed, isRecord,
   latestEntryOf, manageableType, projectTitle, recordAssignment, recordOf, titleOf,
 } from './state'
 import { itemUrl, markdownLink, projectUrl } from './texts'
@@ -83,14 +83,25 @@ function answersNeed(source: string, target: string): boolean {
   return sourceType !== null && NEED_TYPES.has(sourceType) && targetType !== null && ACTIVITY_TYPES.has(targetType)
 }
 
-/** A link the agent made, alone or in bulk: a need answered by a task or a meeting is that task's need, and the need last seen. */
+/**
+ * A link the agent made, alone or in bulk: the session acted on both its ends. A need answered by
+ * a task or a meeting is that task's need, and the need last seen.
+ */
 function rememberLink(state: TrackingState, link: Record<string, unknown> | null, now: number): void {
   const source = stringField(link, 'from') ?? ''
   const target = stringField(link, 'to') ?? ''
+  for (const id of [source, target]) if (id !== '') actOn(state, id, now)
   if (stringField(link, 'type') !== 'has_response' || !answersNeed(source, target)) return
   state.needOf[target] = source
   state.lastNeedSeen = source
-  recordOf(state, target, now)
+}
+
+/** The calls that change an item, by the argument naming it: the session acted on that item. */
+const ITEM_CHANGES: Readonly<Record<string, string>> = {
+  update_manageable: 'id',
+  move_manageable: 'manageableId',
+  add_comment: 'manageableId',
+  attach_tag_to_manageable: 'manageableId',
 }
 
 /**
@@ -199,7 +210,7 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
     state.titles[id] = stringField(answer, 'title') ?? id
     const kind = stringField(answer, 'type') ?? manageableType(id)
     if (kind !== null) state.types[id] = kind
-    recordOf(state, id, now)
+    actOn(state, id, now)
     const item = recordField(fields, 'item')
     const projectId = stringField(item, 'projectId')
     if (projectId !== null) state.projectOf[id] = projectId
@@ -231,9 +242,21 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
   }
 
   if (name === 'assign_activity' && answer !== null && answer['assigned'] === true) {
-    if (answer['isRequest'] === false) {
-      recordAssignment(state, stringField(answer, 'activityId') ?? stringField(fields, 'activityId'), stringField(answer, 'workerId') ?? stringField(fields, 'workerId'))
-    }
+    const activityId = stringField(answer, 'activityId') ?? stringField(fields, 'activityId')
+    if (activityId !== null && activityId !== '') actOn(state, activityId, now)
+    if (answer['isRequest'] === false) recordAssignment(state, activityId, stringField(answer, 'workerId') ?? stringField(fields, 'workerId'))
+    return null
+  }
+
+  const changedBy = ITEM_CHANGES[name]
+  if (changedBy !== undefined) {
+    const id = stringField(fields, changedBy) ?? ''
+    if (id === '') return null
+    actOn(state, id, now)
+    const title = name === 'update_manageable' ? stringField(fields, 'title') : null
+    if (title !== null) state.titles[id] = title
+    const targetProjectId = name === 'move_manageable' ? stringField(fields, 'targetProjectId') : null
+    if (targetProjectId !== null) state.projectOf[id] = targetProjectId
     return null
   }
 
@@ -263,16 +286,21 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
   }
 
   if (name === 'transition_manageable' && answer !== null && answer['transitioned'] === true) {
-    return trackTransition(state, mapping, stringField(fields, 'id') ?? '', stringField(fields, 'toStateId') ?? '', now)
+    const id = stringField(fields, 'id') ?? ''
+    if (id !== '') actOn(state, id, now)
+    return trackTransition(state, mapping, id, stringField(fields, 'toStateId') ?? '', now)
   }
 
   if (name === 'revert_transition' && answer !== null && answer['reverted'] === true) {
     // Undoing a close within the 15-minute window re-pins the task, like a transition would.
-    return trackTransition(state, mapping, stringField(answer, 'id') ?? stringField(fields, 'id') ?? '', stringField(answer, 'newStateId') ?? '', now)
+    const id = stringField(answer, 'id') ?? stringField(fields, 'id') ?? ''
+    if (id !== '') actOn(state, id, now)
+    return trackTransition(state, mapping, id, stringField(answer, 'newStateId') ?? '', now)
   }
 
   if (name === 'add_time_entry' && answer !== null && answer['created'] === true) {
     const activityId = stringField(answer, 'activityId') ?? stringField(fields, 'activityId') ?? ''
+    if (activityId !== '') actOn(state, activityId, now)
     const duration = Math.trunc(numberField(answer, 'duration') ?? numberField(fields, 'duration') ?? 0)
     state.timeEntries.push({ id: stringField(answer, 'id'), activityId, duration, at: now, note: stringField(fields, 'note') })
     const source = stringField(fields, 'note') ?? 'measured'
@@ -286,6 +314,7 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
     // A corrected entry replaces the session's record of it: the entry id is the key when
     // known, else the latest entry on that activity.
     const activityId = stringField(answer, 'activityId') ?? stringField(fields, 'activityId') ?? ''
+    if (activityId !== '') actOn(state, activityId, now)
     const entryId = stringField(answer, 'id') ?? stringField(fields, 'timeEntryId')
     let target = entryById(state, entryId) ?? latestEntryOf(state, activityId)
     if (target === undefined) {
@@ -304,6 +333,7 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
     // A dropped entry leaves the session's record. The spans it covered stay settled: the user
     // decided about them, so nothing asks about them again.
     const activityId = stringField(answer, 'activityId') ?? stringField(fields, 'activityId') ?? ''
+    if (activityId !== '') actOn(state, activityId, now)
     const target = entryById(state, stringField(answer, 'id') ?? stringField(fields, 'timeEntryId'))
     if (target !== undefined) {
       state.timeEntries = state.timeEntries.filter(entry => entry !== target)

@@ -67,6 +67,41 @@ export function recordOf(state: TrackingState, id: string, now: number): TaskRec
   return record
 }
 
+/** The item's record, marked as one the session acted on. */
+export function actOn(state: TrackingState, id: string, now: number): TaskRecord {
+  const record = recordOf(state, id, now)
+  record.actedAt ??= now
+  return record
+}
+
+/**
+ * Whether the session acted on the item. A state stored before `actedAt` was kept falls back on
+ * the session's own acts it recorded: a creation, a pin, a close, a time entry.
+ */
+function actedOn(state: TrackingState, id: string): boolean {
+  const record = state.tasks[id]
+  return (
+    record?.actedAt !== undefined || record?.pinnedAt !== undefined || record?.closedAt !== undefined ||
+    state.types[id] !== undefined || state.timeEntries.some(entry => entry.activityId === id)
+  )
+}
+
+/**
+ * The items the Pragma menu lists: those the session acted on, the needs its tasks answer, the
+ * pinned need and task; the archived and deleted left out, and those whose title the session
+ * never read. An item only read, a candidate weighed while looking for the need, is not listed.
+ */
+export function menuItemIds(state: TrackingState): string[] {
+  const acted = Object.keys(state.titles).filter(id => actedOn(state, id))
+  const ids = new Set([...acted, ...acted.map(id => state.needOf[id]), state.need?.id, state.task?.id])
+  return [...ids].filter((id): id is string => id !== undefined && state.titles[id] !== undefined && state.tasks[id]?.archivedAt === undefined)
+}
+
+/** The projects of the items the Pragma menu lists. */
+export function menuProjectIds(state: TrackingState): string[] {
+  return [...new Set(menuItemIds(state).flatMap(id => state.projectOf[id] ?? []))]
+}
+
 /**
  * An item is closed when Pragma last said so (a transition of the session's, `/pragma:refresh`),
  * else, for a state stored before the status was kept, when the session closed it.

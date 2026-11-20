@@ -55,6 +55,12 @@ export type TimeEntry = { id: string | null; activityId: string; duration: numbe
 /** What the session knows of an item it touched. Epoch seconds. */
 export type TaskRecord = {
   seenAt?: number
+  /**
+   * When the session first acted on it: created, moved, edited, commented, assigned, linked or
+   * logged time on it. An item only read (a candidate weighed while looking for the need) has
+   * none, and stays out of the Pragma menu.
+   */
+  actedAt?: number
   pinnedAt?: number
   countedFrom?: number
   /** When the session closed it: a moment a pin counts from. A close elsewhere sets `status` alone. */

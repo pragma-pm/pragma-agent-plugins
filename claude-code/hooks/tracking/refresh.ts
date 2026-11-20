@@ -26,11 +26,6 @@ export type ItemReading =
 /** A tool call's outcome, as `$.tool.call` resolves it. */
 export type CallOutcome = { deny?: string; isError?: boolean; text?: string }
 
-/** The items the menu lists that Pragma can be asked about: its manageables, the archived left out. */
-export function refreshableIds(state: TrackingState): string[] {
-  return Object.keys(state.titles).filter(id => id.startsWith('manageable_') && state.tasks[id]?.archivedAt === undefined)
-}
-
 export function readingOf(id: string, outcome: CallOutcome): ItemReading {
   if (outcome.isError === true) {
     const reason = outcome.text ?? 'the tool reported an error'
