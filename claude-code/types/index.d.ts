@@ -72,6 +72,8 @@ export type TaskRecord = {
    * before it was kept, and for an item neither has seen: `closedAt` says then.
    */
   status?: 'open' | 'closed'
+  /** Read with `get_manageable`, its links included: the need it answers, if any, is known. */
+  linksRead?: true
 }
 
 /**

@@ -224,6 +224,7 @@ test('the protocol rides the system prompt, filled for the directory and the per
   expect(protocol?.text).toContain('«Improvements» (project__p)')
   expect(protocol?.text).toContain('**A time entry needs no pin.**')
   expect(protocol?.text).toContain('a two-minute fix is a task')
+  expect(protocol?.text).toContain('**No: housekeeping, kept out of Pragma.**')
 })
 
 test('tasks linked in bulk are pinned under their need, not under the need read last', async ($, on) => {
@@ -269,6 +270,58 @@ test('a task read with get_manageable is pinned under the need its own links nam
 
   const pinned = await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
   expect(pinned.context?.join('\n')).toContain('Pinned task «Fix the token check» under issue «Login fails»')
+})
+
+test('a task created with no need is pinned alone, in its own project, not under a need weighed and left', async ($, on) => {
+  const candidate = 'manageable_requirement__r1'
+  engine(on, { items: { [candidate]: { id: candidate, manageableType: 'requirement', body: { title: 'Export invoices' }, scope: { projectIds: ['project__x'] } } } })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+
+  // the agent weighs a need, finds the work has none, creates the task alone
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: candidate })
+  await $.tool.call({
+    tool: 'mcp__pragma__create_manageable',
+    organizationId: 'organization__o',
+    item: { type: 'task', projectId: 'project__p', title: 'Prepare the demo', assignedActorIds: ['actor__me'] },
+  })
+  await $.tool.call({ tool: 'mcp__pragma__available_transitions', id: TASK })
+
+  const pinned = (await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })).context?.join('\n')
+  expect(pinned).toContain('Pinned task «Prepare the demo» (Improvements).')
+  expect(pinned).toContain(`"Pinned: [Prepare the demo](https://app.pragma.pm/items/${TASK}) ([Improvements](https://app.pragma.pm/projects/project__p))"`)
+  expect(pinned).not.toContain('Export invoices')
+})
+
+test('a task with no need pinned after one with a need is not shown under it; linked after its pin, it takes its need', async ($, on) => {
+  const alone = 'manageable_task__t2'
+  engine(on, {
+    items: {
+      [alone]: { id: alone, manageableType: 'task', body: { title: 'Prepare the demo' }, scope: { projectIds: ['project__p'] }, assignees: { actor__me: { isRequest: false } }, links: {} },
+    },
+  })
+  await $.session.start({ cwd: DIRECTORY, surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__pragma__create_manageable', organizationId: 'organization__o', item: { type: 'issue', projectId: 'project__p', title: 'Login fails' } })
+  await $.tool.call({
+    tool: 'mcp__pragma__create_manageable',
+    organizationId: 'organization__o',
+    item: { type: 'task', projectId: 'project__p', title: 'Fix the token check', assignedActorIds: ['actor__me'] },
+  })
+  await $.tool.call({ tool: 'mcp__pragma__create_link', from: NEED, to: TASK, type: 'has_response' })
+  await $.tool.call({ tool: 'mcp__pragma__available_transitions', id: TASK })
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_prog' })
+  await $.tool.call({ tool: 'mcp__pragma__add_time_entry', activityId: TASK, duration: 5, remaining: 0 })
+  await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: TASK, toStateId: 'ws_done' })
+
+  // an existing task read with its links, none to a need
+  await $.tool.call({ tool: 'mcp__pragma__get_manageable', id: alone })
+  await $.tool.call({ tool: 'mcp__pragma__available_transitions', id: alone })
+  const pinned = (await $.tool.call({ tool: 'mcp__pragma__transition_manageable', id: alone, toStateId: 'ws_prog' })).context?.join('\n')
+  expect(pinned).toContain('Pinned task «Prepare the demo» (Improvements).')
+  expect(pinned).not.toContain('Login fails')
+
+  // the agent links it to a need after the pin: the pin takes that need
+  await $.tool.call({ tool: 'mcp__pragma__create_link', from: NEED, to: alone, type: 'has_response' })
+  expect(await promptLine($, 'go on')).toContain('Pragma pin: task «Prepare the demo» under issue «Login fails»')
 })
 
 test('a need found by search is pinned with its project\'s name, asked of Pragma once', async ($, on) => {

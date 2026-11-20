@@ -94,6 +94,8 @@ function rememberLink(state: TrackingState, link: Record<string, unknown> | null
   if (stringField(link, 'type') !== 'has_response' || !answersNeed(source, target)) return
   state.needOf[target] = source
   state.lastNeedSeen = source
+  // The pinned task linked after its pin: its need joins the pin, counted from the task's start.
+  if (state.task?.id === target && state.need?.id !== source) state.need = { id: source, pinnedAt: now, countedFrom: countedFrom(state.task) ?? now }
 }
 
 /** The calls that change an item, by the argument naming it: the session acted on that item. */
@@ -120,6 +122,19 @@ function rememberOwnNeed(state: TrackingState, id: string, links: Record<string,
   }
 }
 
+/**
+ * The need a task pinned now answers: the one its links name, as the session saw them. A task
+ * the session created, or read with its links, and saw no need link on stands alone: work with no
+ * need, never the need read last, which may be a candidate weighed and left. Only a task the
+ * session knows nothing of falls back on the need seen last: the agent found the task there.
+ */
+function pinnedNeed(state: TrackingState, taskId: string): string | null {
+  const linked = state.needOf[taskId]
+  if (linked !== undefined) return linked
+  const linksKnown = state.types[taskId] !== undefined || state.tasks[taskId]?.linksRead === true
+  return linksKnown ? null : state.lastNeedSeen
+}
+
 /** A transition of a task or a need: a pin, a close, or neither. The line for the model, if any. */
 export function trackTransition(state: TrackingState, mapping: Mapping | null, manageableId: string, toStateId: string, now: number): string | null {
   const category = state.stateCategories[toStateId]
@@ -132,15 +147,19 @@ export function trackTransition(state: TrackingState, mapping: Mapping | null, m
     record.pinnedAt = now
     record.countedFrom = start
     record.status = 'open'
-    const needId = state.needOf[manageableId] ?? state.lastNeedSeen
-    if (needId !== null && needId !== undefined && state.need?.id !== needId) state.need = { id: needId, pinnedAt: now, countedFrom: start }
-    const projectId = needId === null || needId === undefined ? undefined : state.projectOf[needId]
-    const project = needId === null || needId === undefined ? '' : projectTitle(state, mapping, needId)
-    const needLink = needId === null || needId === undefined ? 'no need linked yet' : markdownLink(titleOf(state, needId), itemUrl(needId))
+    const needId = pinnedNeed(state, manageableId)
+    // A task with no need leaves the previous task's need: the pin is the task alone.
+    if (needId === null) state.need = null
+    else if (state.need?.id !== needId) state.need = { id: needId, pinnedAt: now, countedFrom: start }
+    // The project is the need's, else the task's own.
+    const projectOwner = needId ?? manageableId
+    const projectId = state.projectOf[projectOwner]
+    const project = projectTitle(state, mapping, projectOwner)
+    const needPart = needId === null ? '' : ` — ${markdownLink(titleOf(state, needId), itemUrl(needId))}`
     const projectPart = project !== '' && projectId !== undefined ? ` (${markdownLink(project, projectUrl(projectId))})` : ''
     return (
       `Pinned ${describePin(state, mapping) ?? ''}. Tell the user in one line, markdown links kept (the footer turns them into badges): ` +
-      `"Pinned: ${markdownLink(titleOf(state, manageableId), itemUrl(manageableId))} — ${needLink}${projectPart}".`
+      `"Pinned: ${markdownLink(titleOf(state, manageableId), itemUrl(manageableId))}${needPart}${projectPart}".`
     )
   }
   if (category !== undefined && CLOSING_CATEGORIES.has(category) && type !== null && ACTIVITY_TYPES.has(type)) {
@@ -232,7 +251,9 @@ export function track(state: TrackingState, mapping: Mapping | null, tool: strin
     if (projectId !== null) state.projectOf[id] = projectId
     const type = manageableType(id)
     if (type !== null && NEED_TYPES.has(type)) state.lastNeedSeen = id
-    rememberOwnNeed(state, id, recordField(answer, 'links'))
+    const links = recordField(answer, 'links')
+    if (links !== null && type !== null && ACTIVITY_TYPES.has(type)) recordOf(state, id, now).linksRead = true
+    rememberOwnNeed(state, id, links)
     // An assignment request still pending is not an assignment.
     for (const [actorId, assignment] of Object.entries(recordField(answer, 'assignees') ?? {})) {
       const pending = isRecord(assignment) && assignment['isRequest'] === true && assignment['accepted'] !== true

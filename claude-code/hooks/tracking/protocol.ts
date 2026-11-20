@@ -11,16 +11,25 @@ Hooks: a change to a file of the tracked directory is refused while no task is p
 
 ## Vocabulary
 
-- **Need** — *what do we need*: a requirement (feature, change) or an issue (fix). Groups the tasks. The pin's parent.
+- **Need** — *what do we need*: a requirement (feature, change) or an issue (fix). Groups the tasks. The pin's parent, when the work has one.
 - **Task** — *how we do it*: a piece of work worth seeing in the project, an outcome someone could ask about («fix the token check», «add the export»), not an edit. Carries the time entries. Several under one need when the work splits into such pieces.
 - **Pin** — the task this session is working on, marked by transitioning it to the in_progress state. It gates file changes, not time entries.
 
-## Pin before work (anything that changes files)
+## What goes into Pragma
 
-1. **Need.** \`search\` across the organization (no projectId) with the gist of the request; \`get_manageable\` the best hits; skip done/cancelled. None → create it (\`create_manageable\` type requirement, or issue when something is wrong) in the best-fitting project: an initiative project the work clearly belongs to (\`list_projects\`), else the default project whose kind fits above. No default project fits, or none is declared: ask the user once (AskUserQuestion, the organization's projects as options). A need you create gets its domains: \`list_domains\` once, pass as \`domainIds\` the ones the work belongs to; none fits → none. Never create a project or a domain.
-2. **Tasks.** One when the work is one piece; several when it decomposes — then every task goes under the same need. Find them the same way, else create (\`create_manageable\` type task, title imperative, description = the user's request verbatim, \`domainIds\` = the need's, \`scope.domainIds\` in \`get_manageable\`; a need without any → pick them from \`list_domains\` as for a new need). Link \`create_link({ from: <need>, to: <task>, type: "has_response" })\` — the need is \`from\`, the task is \`to\`. {shortWorkRule}
+Pragma keeps the work someone will want to find later. The test: in six months, reading the project's tasks, would this one tell anyone anything?
+
+- **No: housekeeping, kept out of Pragma.** No need, no task, no time entry. Tidying the working environment (pruning worktrees or branches, clearing caches, reinstalling dependencies, freeing disk space), and any chore whose result normal use undoes. A task already pinned keeps counting through it: that is its only trace. Nothing pinned: the file-change refusal does not fit; say so in one line ("Housekeeping, kept out of Pragma") and repeat the call.
+- **Yes: a task**, under its need when the work has one.
+
+A **need** is a lasting state of what the project delivers: once reached, it stays reached until someone decides otherwise («export invoices as CSV», «login fails on Safari»). Before creating one, ask: would its completion stay true? If normal use will undo it, or the same work will be asked for again, it is no need. Work worth finding later that reaches no such state (preparing a demo, a client's onboarding, a one-off data export) is a task alone: never invent a requirement to hang it on.
+
+## Pin before work (work worth tracking that changes files)
+
+1. **Need.** \`search\` across the organization (no projectId) with the gist of the request; \`get_manageable\` the best hits; skip done/cancelled. A need the work serves takes its task, even when the work alone would have none (the release of a feature under way). None found and the work has a need: create it (\`create_manageable\` type requirement, or issue when something is wrong). None found and the work has none: no need, the task stands alone. A new need, or a task with no need, goes in the best-fitting project: an initiative project the work clearly belongs to (\`list_projects\`), else the default project whose kind fits above. No default project fits, or none is declared: ask the user once (AskUserQuestion, the organization's projects as options). A need you create gets its domains: \`list_domains\` once, pass as \`domainIds\` the ones the work belongs to; none fits → none. Never create a project or a domain.
+2. **Tasks.** One when the work is one piece; several when it decomposes — then every task goes under the same need. Find them the same way, else create (\`create_manageable\` type task, title imperative, description = the user's request verbatim, \`domainIds\` = the need's, \`scope.domainIds\` in \`get_manageable\`; a need without any, or no need → pick them from \`list_domains\` as for a new need). Link \`create_link({ from: <need>, to: <task>, type: "has_response" })\` — the need is \`from\`, the task is \`to\`; a task with no need gets no link. {shortWorkRule}
 3. **Assign.** The person is assigned to every task they work on. A task you create is assigned to them on creation. For an existing task, \`assign_activity({ activityId, workerId: "{actorId}", isRequest: false })\` unless \`get_manageable\` already shows them under \`assignees\` (assigning twice fails).
-4. **Pin.** \`available_transitions\` on the task, then \`transition_manageable\` to the in_progress state. Then one line to the user, with markdown links so the footer turns them into badges: "Pinned: [<task>](https://app.pragma.pm/items/<taskId>) — [<need>](https://app.pragma.pm/items/<needId>) ([<project>](https://app.pragma.pm/projects/<projectId>))".
+4. **Pin.** \`available_transitions\` on the task, then \`transition_manageable\` to the in_progress state. Then one line to the user, with markdown links so the footer turns them into badges: "Pinned: [<task>](https://app.pragma.pm/items/<taskId>) — [<need>](https://app.pragma.pm/items/<needId>) ([<project>](https://app.pragma.pm/projects/<projectId>))"; with no need, "Pinned: [<task>](https://app.pragma.pm/items/<taskId>) ([<project>](https://app.pragma.pm/projects/<projectId>))".
 
 Never ask which item to use: pick the best, say what you picked. Wrong pick → the user says so → log, re-pin, \`archive_manageable\` the junk. Answering a question changes no file and needs no pin.
 
@@ -28,7 +37,7 @@ Never ask which item to use: pick the best, say what you picked. Wrong pick → 
 
 ## Moving on
 
-- Finished a task: log its time, transition it to done. The hook then names the need it answers and its other tasks: \`available_transitions\` on the need, and ask the user with AskUserQuestion whether it moves too — one option per allowed transition (Done, In review, …) plus «Leave it as is». The user decides; you never close a requirement or an issue on your own. Then pin the next task of the need, if any.
+- Finished a task: log its time, transition it to done. The hook then names the need it answers, if any, and its other tasks: \`available_transitions\` on the need, and ask the user with AskUserQuestion whether it moves too — one option per allowed transition (Done, In review, …) plus «Leave it as is». The user decides; you never close a requirement or an issue on your own. Then pin the next task of the need, if any.
 - New prompt about different work: log the current task, re-pin (new need if the work answers another one).
 
 ## Logging time

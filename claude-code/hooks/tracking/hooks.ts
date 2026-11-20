@@ -274,8 +274,8 @@ function promptLine(state: TrackingState, now: number): string {
   const pin = describePin(state, mapping)
   if (pin === null) {
     return (
-      'Pragma: no task pinned. Work that changes files needs a pin first (need → task → transition to in_progress, see the protocol ' +
-      'in the system prompt); answering a question needs none.'
+      'Pragma: no task pinned. Work worth tracking that changes files needs a pin first (task, under its need when the work has one, ' +
+      'then transition to in_progress: see the protocol in the system prompt); housekeeping and answering a question need none.'
     )
   }
   const closing = { at: now, byPerson: true }
@@ -294,7 +294,7 @@ function promptLine(state: TrackingState, now: number): string {
       : ''
   const ambiguous = need.ambiguousMinutes > 0 ? ` (+${hm(need.ambiguousMinutes)} in ambiguous turns or gaps: ask before logging them)` : ''
   return (
-    `Pragma pin: ${pin}.${taskPart} Need, since it was first pinned: ${hm(need.minutes)} working${ambiguous}, ` +
+    `Pragma pin: ${pin}.${taskPart} ${state.need === null ? 'Since the first pin' : 'Need, since it was first pinned'}: ${hm(need.minutes)} working${ambiguous}, ` +
     `${hm(loggedMinutes(state))} logged this session.${nudge} Different work than the pin? Log the current task, then re-pin.`
   )
 }

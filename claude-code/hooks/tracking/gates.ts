@@ -63,12 +63,14 @@ export function gateWork(state: TrackingState, input: WorkGateInput): string | n
     'unpinned',
     input.tool,
     input.fields,
-    'Pragma: no task pinned for this session, and this call changes files of the tracked directory. Pin first: find or create the need ' +
-      '(requirement, or issue for a fix) with `search` across the organization; find or create the task under it (`create_manageable` ' +
-      'type task with the need\'s `domainIds`, then `create_link` need --has_response--> task); `available_transitions` on the task, then `transition_manageable` it ' +
-      'to the in_progress state. Then tell the user in one line: "Pinned: [<task>](https://app.pragma.pm/items/<taskId>) — ' +
-      '[<need>](https://app.pragma.pm/items/<needId>) (<project>)". Full protocol in the system prompt. Overriding opens this gate until ' +
-      'the next prompt.',
+    'Pragma: no task pinned for this session, and this call changes files of the tracked directory. Housekeeping (pruning worktrees ' +
+      'or branches, clearing caches, any chore normal use undoes) stays out of Pragma: say so in one line and repeat the call. Work ' +
+      'worth finding later: pin first. Find the need it answers with `search` across the organization, or create one (requirement, ' +
+      'or issue for a fix) only when the work reaches a lasting state; find or create the task (`create_manageable` type task with ' +
+      'the need\'s `domainIds`, then `create_link` need --has_response--> task; with no need, the task stands alone); ' +
+      '`available_transitions` on the task, then `transition_manageable` it to the in_progress state. Then tell the user in one ' +
+      'line: "Pinned: [<task>](https://app.pragma.pm/items/<taskId>) — [<need>](https://app.pragma.pm/items/<needId>) (<project>)", ' +
+      'without the need part when there is none. Full protocol in the system prompt. Overriding opens this gate until the next prompt.',
   )
   if (reason === null) state.workGateOpen = true // overridden: the person wants the work done unpinned, this turn
   return reason

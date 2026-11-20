@@ -15,7 +15,9 @@ export const OVERRIDE_SENTENCE =
 // serves (the default), or gets a task of its own (the person's preference,
 // `preferences.taskForShortWork` in identity.json, asked at setup). Work that is the session's
 // whole purpose gets its task either way, however short.
-const WHOLE_PURPOSE = 'Work that is the session\'s whole purpose gets its task and its time, however short: a two-minute fix is a task.'
+const WHOLE_PURPOSE =
+  'Work that is the session\'s whole purpose gets its task and its time, however short: a two-minute fix is a task. ' +
+  'Housekeeping excepted: it stays out of Pragma (see «What goes into Pragma»).'
 const SHORT_WORK_ON_PREVIOUS_TASK =
   `**Tasks are for traceability, not an audit log.** ${WHOLE_PURPOSE} Within larger work, a step of a few minutes (a rename, a ` +
   'test adjusted, a typo met on the way) is no task of its own: it goes on the task it serves — the pinned one, else the need\'s ' +

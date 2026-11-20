@@ -189,9 +189,18 @@ export function taskFigure(state: TrackingState, closing: Moment): TaskFigure | 
 
 export type NeedFigure = { minutes: number; ambiguousMinutes: number; ambiguous: Span[] }
 
-/** The working minutes since the need started counting (else since the session started). */
+/**
+ * Where the session's earliest pin started counting; null before any pin. Time before it, a
+ * housekeeping chore done unpinned, is no work owed to a task.
+ */
+function firstPinStart(state: TrackingState): number | null {
+  const starts = Object.values(state.tasks).flatMap(record => (record.pinnedAt === undefined ? [] : [countedFrom(record) ?? record.pinnedAt]))
+  return starts.length === 0 ? null : Math.min(...starts)
+}
+
+/** The working minutes since the need started counting, else since the session's first pin, else since the session started. */
 export function needFigure(state: TrackingState, closing: Moment): NeedFigure {
-  const since = countedFrom(state.need) ?? state.startedAt
+  const since = countedFrom(state.need) ?? firstPinStart(state) ?? state.startedAt
   const { seconds, ambiguous } = working(state.turns, since, closing)
   // A time entry settles the spans before it: the protocol asks the user before logging.
   const settledBefore = Math.max(state.settledAt, ...ownEntries(state).map(entry => entry.at))
@@ -240,10 +249,13 @@ export function projectTitle(state: TrackingState, mapping: Mapping | null, mana
   return projectId === undefined ? '' : (knownProjectTitle(state, mapping, projectId) ?? '')
 }
 
-/** `task «T» under requirement «N» (Project)`, or one side of it; null while nothing is pinned. */
+/** `task «T» under requirement «N» (Project)`, a task with no need `task «T» (Project)`, or the need alone; null while nothing is pinned. */
 export function describePin(state: TrackingState, mapping: Mapping | null): string | null {
   const parts: string[] = []
-  if (state.task !== null) parts.push(`task «${titleOf(state, state.task.id)}»`)
+  if (state.task !== null) {
+    const project = state.need === null ? projectTitle(state, mapping, state.task.id) : ''
+    parts.push(`task «${titleOf(state, state.task.id)}»${project === '' ? '' : ` (${project})`}`)
+  }
   if (state.need !== null) {
     const project = projectTitle(state, mapping, state.need.id)
     parts.push(`${manageableType(state.need.id) ?? 'need'} «${titleOf(state, state.need.id)}»${project === '' ? '' : ` (${project})`}`)
